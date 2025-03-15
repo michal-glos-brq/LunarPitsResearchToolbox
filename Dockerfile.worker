@@ -1,0 +1,50 @@
+FROM ubuntu:24.04
+
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Europe/Prague
+ENV TERM=xterm-256color
+
+# Install base dependencies, including software-properties-common, and configure timezone/locales
+RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    curl \
+    tzdata \
+    ncurses-bin \
+    libreadline-dev \
+    bash-completion \
+    locales && \
+    ln -fs /usr/share/zoneinfo/$TZ /etc/localtime && \
+    echo $TZ > /etc/timezone && \
+    dpkg-reconfigure --frontend noninteractive tzdata && \
+    rm -rf /var/lib/apt/lists/*
+
+# Add deadsnakes PPA (now that software-properties-common is installed)
+RUN add-apt-repository ppa:deadsnakes/ppa -y && apt-get update
+
+# Install Python 3.9 and related packages
+RUN apt-get update && apt-get install -y \
+    python3.9 \
+    python3.9-venv \
+    python3.9-dev \
+    python3-pip && \
+    rm -rf /var/lib/apt/lists/*
+
+# Generate and update locales
+RUN locale-gen en_US.UTF-8 && update-locale LANG=en_US.UTF-8
+
+COPY pyproject.toml poetry.lock ./
+COPY src ./src
+COPY worker_entrypoint.sh ./
+
+# Create and activate virtual environment, then install dependencies
+RUN python3.9 -m venv /app/venv
+RUN /app/venv/bin/pip3 install --upgrade pip
+RUN /app/venv/bin/pip3 install poetry
+RUN . /app/venv/bin/activate && poetry install
+
+# Start bash
+ENTRYPOINT ["/bin/bash"]

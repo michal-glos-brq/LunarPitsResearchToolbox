@@ -1,0 +1,48 @@
+[tool.poetry]
+name = "LunarPitsResearchToolbox"
+package-mode = false
+version = "0.0.1"
+description = "A lunar data tool."
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/michal-glos-brq/LavaTubeSniffer"
+homepage = "https://github.com/michal-glos-brq/LavaTubeSniffer"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+astropy = "6.0.1"
+astropy-iers-data = "0.2025.1.20.0.32.27"
+beautifulsoup4 = "4.12.3"
+pandas = "2.2.3"
+pydantic = "2.10.4"
+pydantic-core = "2.27.2"
+pymongo = "4.10.1"
+scikit-learn = "1.6.1"
+scipy = "1.13.1"
+spiceypy = "6.0.0"
+tqdm = "4.67.1"
+plotly = "6.0.0"
+msgpack = "^1.1.0"
+celery = {extras = ["redis"], version = "^5.4.0"}
+
+[tool.poetry.group.dev.dependencies]
+jupyter = "1.1.1"
+jupyter-console = "6.6.3"
+jupyter-events = "0.12.0"
+jupyter-lsp = "2.2.5"
+jupyter-server-mathjax = "0.2.6"
+jupyter-server = "2.15.0"
+jupyter-server-terminals = "0.5.3"
+jupyterlab = "4.3.5"
+jupyterlab-lsp = "5.1.0"
+jupyterlab-code-formatter = "3.0.2"
+jupyterlab-git = "0.51.0"
+jupyterlab-pygments = "0.3.0"
+jupyterlab-server = "2.27.3"
+jupyterlab-widgets = "3.0.13"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

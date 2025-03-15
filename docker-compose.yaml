@@ -1,0 +1,26 @@
+services:
+  mongodb:
+    image: mongo:6.0
+    container_name: MongoDB
+    ports:
+      - "27017:27017"
+    volumes:
+      - /media/mglos/HDD_8TB3/MONGO/DB:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+    restart: always
+
+  redis:
+    image: redis:latest
+    container_name: Redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - /media/mglos/HDD_8TB3/REDIS:/data
+    restart: always
+    command: redis-server --save 60 1 --loglevel warning
+
+volumes:
+  redis_data:
+    driver: local
