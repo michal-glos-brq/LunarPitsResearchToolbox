@@ -21,19 +21,7 @@ for the lunar surface using SPICE. The process includes:
 The generated kernel allows precise modeling of the Moon's surface
 for spacecraft navigation, simulations, and planetary science research.
 
-Dependencies:
--------------
-- SPICE (spiceypy)
-- GDAL (for TIFF to XYZ conversion)
-- Pandas, NumPy, Astropy
-
 Usage:
-------
-This class should be instantiated with the desired output filename.
-If the file does not exist, the required processing steps will be
-executed automatically.
-
-Example:
 --------
     kernel = DetailedModelDSKKernel("moon_surface.dsk")
     # The file "moon_surface.dsk" will be created if not found.
