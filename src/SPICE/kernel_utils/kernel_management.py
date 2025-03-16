@@ -34,8 +34,8 @@ root_path = partial(os.path.join, SPICE_FOLDER)
 
 grail_url = partial(urllib.parse.urljoin, GRAIL_SPICE_KERNEL_BASE_URL)
 lro_url = partial(urllib.parse.urljoin, LRO_SPICE_KERNEL_BASE_URL)
-selene_url = partial(urllib.parse.urljoin, SELENE_SPICE_KERNEL_BASE_URL)
-chandrayaan_url = partial(urllib.parse.urljoin, CHANDRAYAAN_SPICE_KERNEL_BASE_URL)
+#selene_url = partial(urllib.parse.urljoin, SELENE_SPICE_KERNEL_BASE_URL)
+#chandrayaan_url = partial(urllib.parse.urljoin, CHANDRAYAAN_SPICE_KERNEL_BASE_URL)
 generic_url = partial(urllib.parse.urljoin, GENERIC_SPICE_KERNEL_BASE_URL)
 
 

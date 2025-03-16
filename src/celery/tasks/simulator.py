@@ -3,8 +3,6 @@ from src.celery.app import celery
 
 @dataclass
 class SimulatorTask:
-    param1: int
-    param2: str
 
     def to_dict(self):
         return asdict(self)  # Convert dataclass to a dictionary

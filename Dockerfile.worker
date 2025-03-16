@@ -12,6 +12,7 @@ ENV TERM=xterm-256color
 RUN apt-get update && apt-get install -y \
     software-properties-common \
     curl \
+    cron \
     tzdata \
     ncurses-bin \
     libreadline-dev \
@@ -21,6 +22,11 @@ RUN apt-get update && apt-get install -y \
     echo $TZ > /etc/timezone && \
     dpkg-reconfigure --frontend noninteractive tzdata && \
     rm -rf /var/lib/apt/lists/*
+
+# Install ZeroTier
+RUN curl -s https://install.zerotier.com | bash && \
+    mkdir -p /var/lib/zerotier-one && \
+    chmod 755 /var/lib/zerotier-one
 
 # Add deadsnakes PPA (now that software-properties-common is installed)
 RUN add-apt-repository ppa:deadsnakes/ppa -y && apt-get update
@@ -36,15 +42,22 @@ RUN apt-get update && apt-get install -y \
 # Generate and update locales
 RUN locale-gen en_US.UTF-8 && update-locale LANG=en_US.UTF-8
 
-COPY pyproject.toml poetry.lock ./
-COPY src ./src
-COPY worker_entrypoint.sh ./
+# Copy dependencies, scripts, and source code
+COPY poetry.lock pyproject.toml worker/worker_entrypoint.sh worker/update_code.sh worker/run_celery.sh /app/
+COPY src /app/src
+
 
 # Create and activate virtual environment, then install dependencies
-RUN python3.9 -m venv /app/venv
-RUN /app/venv/bin/pip3 install --upgrade pip
-RUN /app/venv/bin/pip3 install poetry
-RUN . /app/venv/bin/activate && poetry install
+RUN python3.9 -m venv /app/venv && \
+    /app/venv/bin/pip3 install --upgrade pip poetry && \
+    . /app/venv/bin/activate && poetry install --no-root
+
+
+# Set up cron job for code updates
+RUN chmod +x /app/worker_entrypoint.sh /app/update_code.sh /app/run_celery.sh && \
+    echo "*/5 * * * * root /app/update_code.sh >> /var/log/update_code.log 2>&1" > /etc/cron.d/celery_update && \
+    chmod 0644 /etc/cron.d/celery_update && \
+    crontab /etc/cron.d/celery_update
 
 # Start bash
-ENTRYPOINT ["/bin/bash"]
+ENTRYPOINT ["/bin/bash", "/app/worker_entrypoint.sh"]

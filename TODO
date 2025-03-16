@@ -6,11 +6,6 @@
  - Add GRAIL Data fetchers
 
  - Time interval better filter with subinstruemnts? Maybe not necessary
- - Read some config from ENV vars
- - Create Dockerfile
  - Create Celery Workers from tasks
 
- - Auto-Update hosted code in Dockerfile
  - Celery will have "progress bar"
-
- - Put the IP address (ZeroTier) in sialstoma hosting to fetch it whenever needed

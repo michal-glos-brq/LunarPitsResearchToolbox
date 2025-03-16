@@ -4,12 +4,6 @@ import numpy as np
 #             SPICE METADATA                  #
 ###############################################
 
-# Use more precise frame
-#LUNAR_FRAME = "MOON_ME"
-LUNAR_FRAME = "MOON_PA_DE440"
-
-LUNAR_TIF_DATA_URL = "https://planetarymaps.usgs.gov/mosaic/Lunar_LRO_LOLA_Global_LDEM_118m_Mar2014.tif"
-
 MAX_LOADED_DYNAMIC_KERNELS = 3
 
 SPICE_FOLDER = "/media/mglos/HDD_8TB2/SPICE"
@@ -19,28 +13,6 @@ GRAIL_SPICE_KERNEL_BASE_URL = "https://naif.jpl.nasa.gov/pub/naif/pds/data/grail
 #SELENE_SPICE_KERNEL_BASE_URL = "https://darts.isas.jaxa.jp/pub/spice/SELENE/kernels_ORG/"
 #CHANDRAYAAN_SPICE_KERNEL_BASE_URL = ""
 GENERIC_SPICE_KERNEL_BASE_URL = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/"
-
-
-###############################################
-#           DSK CREATION CONSTANTS            #
-###############################################
-
-DSK_FILE_CENTER_BODY_ID = 301  # NAIF ID for the Moon
-DSK_FILE_SURFACE_ID = 1001  # Arbitrary surface ID
-
-# Configure carefully ...
-FINSCL = 6.9  # Fine voxel scale
-CORSCL = 9    # Coarse voxel scale
-WORKSZ = 400_000_000
-VOXPSZ = 45_000_000   # Voxel-plate pointer array size
-VOXLSZ = 135_000_000  # Voxel-plate list array size
-SPXISZ = 1_250_000_000  # Spatial index size
-MAKVTL = True
-
-CORSYS = 3
-CORPAR = np.zeros(10)
-DCLASS = 2
-
 
 
 

@@ -1,9 +1,47 @@
 """
-Implementation of DSK spice kernel
+====================================================
+Lunar Surface DSK Kernel Generator for SPICE
+====================================================
+
+Author: Michal Gloš
+University: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Diploma Thesis Project
+
+Description:
+------------
+This module implements the generation of a Digital Shape Kernel (DSK)
+for the lunar surface using SPICE. The process includes:
+
+1. Downloading high-resolution lunar elevation data from USGS.
+2. Converting TIFF elevation data to XYZ format using GDAL.
+3. Transforming the XYZ data into a triangulated mesh for DSK.
+4. Writing the DSK file with SPICE.
+
+The generated kernel allows precise modeling of the Moon's surface
+for spacecraft navigation, simulations, and planetary science research.
+
+Dependencies:
+-------------
+- SPICE (spiceypy)
+- GDAL (for TIFF to XYZ conversion)
+- Pandas, NumPy, Astropy
+
+Usage:
+------
+This class should be instantiated with the desired output filename.
+If the file does not exist, the required processing steps will be
+executed automatically.
+
+Example:
+--------
+    kernel = DetailedModelDSKKernel("moon_surface.dsk")
+    # The file "moon_surface.dsk" will be created if not found.
+
 """
 
 import os
-import sys
+import subprocess
 import logging
 import requests
 from tqdm import tqdm
@@ -15,26 +53,10 @@ import spiceypy as spice
 import astropy.units as u
 from astropy.coordinates import SphericalRepresentation
 
-sys.path.insert(0, "/".join(__file__.split("/")[:-3]))
-from src.SPICE.config import (
-    LUNAR_FRAME,
-    LUNAR_TIF_DATA_URL,
-    DSK_FILE_CENTER_BODY_ID,
-    DSK_FILE_SURFACE_ID,
-    FINSCL,
-    CORSCL,
-    WORKSZ,
-    VOXPSZ,
-    VOXLSZ,
-    SPXISZ,
-    MAKVTL,
-    CORPAR,
-    CORSYS,
-    DCLASS,
-)
-from src.global_config import TQDM_NCOLS
+from src.global_config import LUNAR_FRAME, TQDM_NCOLS
 from src.SPICE.kernel_utils.spice_utils import BaseKernel
 from src.SPICE.kernel_utils.kernel_management import LunarKernelManager
+from src.SPICE.config import LUNAR_TIF_DATA_URL, DSK_FILE_CENTER_BODY_ID, DSK_FILE_SURFACE_ID, FINSCL, CORSCL, WORKSZ, VOXPSZ, VOXLSZ, MAKVTL, SPXISZ, DCLASS, LUNAR_FRAME, CORSYS, CORPAR
 
 logger = logging.getLogger(__name__)
 
@@ -96,12 +118,16 @@ class DetailedModelDSKKernel(BaseKernel):
             t.close()
 
     def create_xyz_from_tif(self):
-        command = (
-            f"gdal_translate -of XYZ -scale -32768 32767 -1737.4 1737.4 -outsize {self.tif_scale_percents:.2}% "
-            f"{self.tif_scale_percents:.2}% -a_nodata -32768 {self.tif_filename} {self.xyz_filename}"
-        )
-        if os.system(command):
-            raise RuntimeError("Failed to convert TIF to XYZ")
+        command = [
+            "gdal_translate", "-of", "XYZ",
+            "-scale", "-32768", "32767", "-1737.4", "1737.4",
+            "-outsize", f"{self.tif_scale_percents:.2}%", f"{self.tif_scale_percents:.2}%",
+            "-a_nodata", "-32768", str(self.tif_filename), str(self.xyz_filename)
+        ]
+        result = subprocess.run(command, capture_output=True, text=True)
+    
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to convert TIF to XYZ: {result.stderr}")
 
     def create_dsk_from_xyz(self):
         df = pd.read_csv(self.xyz_filename, sep=" ", names=["x", "y", "z"])

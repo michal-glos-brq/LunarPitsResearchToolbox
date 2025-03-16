@@ -23,7 +23,7 @@ zerotier-install:
 worker-build:
 	@docker build -f Dockerfile.worker -t worker .
 
-worker:
+worker-start:
 	@mkdir -p ${UTILITY_VOLUME}
 	@chmod -R 777 ${UTILITY_VOLUME}
 	@docker run -it --rm \
@@ -31,8 +31,10 @@ worker:
   		--cap-add=SYS_ADMIN \
   		--device=/dev/net/tun \
   		-e ZEROTIER_JOIN_ID=${NETWORK_ID} \
+		-e GH_TOKEN=${GH_TOKEN} \
+		-e WORKER_ID=${WORKER_ID} \
 		-v $(UTILITY_VOLUME):/app/data \
-  		worker
+  		worker || true
 
 ### This will be eventually done through a python script in a loop
 
