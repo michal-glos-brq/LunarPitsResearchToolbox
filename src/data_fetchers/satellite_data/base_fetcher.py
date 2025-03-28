@@ -16,7 +16,7 @@ import pandas as pd
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from src.global_config import HDD_BASE_PATH, TQDM_NCOLS, MAX_DOWNLOADS, MAX_PROCESSES
+from src.global_config import HDD_BASE_PATH, TQDM_NCOLS, MAX_DATA_DOWNLOADS, MAX_PROCESSES
 from src.config import TIME_STEP
 from src.db.mongo.interface import Sessions
 
@@ -214,7 +214,7 @@ class BaseFetcher:
         result_queue = manager.Queue()
     
         # Semaphores
-        download_sem = mp.BoundedSemaphore(MAX_DOWNLOADS)
+        download_sem = mp.BoundedSemaphore(MAX_DATA_DOWNLOADS)
         processing_sem = mp.BoundedSemaphore(MAX_PROCESSES)
 
         db_insert_process = mp.Process(target=BaseFetcher.insert_to_db, args=(result_queue, len(datafiles)))

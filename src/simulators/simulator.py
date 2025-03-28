@@ -1,47 +1,66 @@
-from typing import Optional
+from typing import Optional, List
 
 from tqdm import tqdm
 import spiceypy as spice
 from astropy.time import Time, TimeDelta
 
-from src.global_config import TQDM_NCOLS
-from src.kernel_utils.kernel_management import LunarKernelManager
-from src.instruments.instrument import BaseInstrument
-from src.db.mongo.interface import Sessions
+from src.SPICE.kernel_utils.kernel_management import BaseKernelManager
+from src.SPICE.instruments.instrument import BaseInstrument
+from src.db.interface import Sessions
 from src.simulators.filters import BaseFilter
+from src.simulators.config import SIMULATION_STEP
 from src.config import LRO_SPEED, TIME_STEP, MAX_TIME_STEP, SIMULATION_BATCH_SIZE
 
+
+
 class RemoteSensingSimulator:
-    """This class is used to simulate the trajectory and orientation of spacecraft and identify time
-    intervals when it was pointing towards some area of our interest on the lunar surface"""
+    """
+    This class is used to simulate the trajectory and orientation of spacecraft and identify time
+    intervals when it was pointing towards some area of our interest on the lunar surface
+    
+    Simulation is computationally optimized for a single satellite, but list of instruments.
+    KernelManager has to be pre-configured, only step method is called within the simulation
+    """
 
     
-    def __init__(self, instrument: BaseInstrument, filter: BaseFilter, kernel_manager: LunarKernelManager):
-        self.instrument = instrument
+    def __init__(self, instruments: List[BaseInstrument], filter: BaseFilter, kernel_manager: BaseKernelManager, simulation_start_time: Optional[Time] = None, simulation_end_time: Optional[Time] = None):
+        self.instruments = instruments
         self.filter = filter
         self.kernel_manager = kernel_manager
+        self.min_time = max(simulation_start_time, kernel_manager.min_loaded_time) if simulation_start_time is not None else kernel_manager.min_loaded_time
+        self.max_time = min(simulation_end_time, kernel_manager.max_loaded_time) if simulation_end_time is not None else kernel_manager.max_loaded_time
+        self._computation_timedelta = SIMULATION_STEP
+
+
+    @property
+    def computation_timedelta(self):
+        return TimeDelta(self._computation_timedelta, format="sec")
 
     def _setup_time(self, time: Optional[Time] = None):
         """Setup or reset the simulation timing"""
-        time = self.kernel_manager.min_loaded_time if time is None else time
+        if time is None:
+            time = self.min_time
+        # initialize the simulation state
         self.current_simulation_step = 0
         self.current_simulation_timestamp_et = spice.str2et(time.utc.iso)
         self.current_simulation_timestamp = time
         self.kernel_manager.step(time)
 
+
     def _simulation_step(self):
-        """Step the simulation itself"""
+        """Perform a single step the simulation itself"""
         self.current_simulation_timestamp += self.computation_timedelta
         self.current_simulation_timestamp_et = spice.str2et(self.current_simulation_timestamp.utc.iso)
         self.current_simulation_step += 1
-        self.sweep_iterator.step(self.current_simulation_timestamp)
+        self.kernel_manager.step(self.current_simulation_timestamp)
 
 
     def _adjust_timestep(self, min_distance: float):
-        new_time_step = (min_distance - self.rough_treshold) / LRO_SPEED
-        self.computation_timedelta = TimeDelta(min(max(TIME_STEP, new_time_step), MAX_TIME_STEP), format="sec")
-        self.adjusted_timesteps.append(new_time_step)
-        self.min_distances.append(min_distance)
+        """Pass for now"""
+        # new_time_step = (min_distance - self.rough_treshold) / LRO_SPEED
+        # self.computation_timedelta = TimeDelta(min(max(TIME_STEP, new_time_step), MAX_TIME_STEP), format="sec")
+        # self.adjusted_timesteps.append(new_time_step)
+        # self.min_distances.append(min_distance)
 
 
     def _calculate_state(self):

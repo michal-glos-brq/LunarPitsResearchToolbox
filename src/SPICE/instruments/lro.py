@@ -3,128 +3,70 @@ import logging
 import spiceypy as spice
 
 from src.SPICE.instruments.instrument import BaseInstrument
-from src.SPICE.instruments.subinstruments import FrameCorrectedSubInstrument
+from src.SPICE.instruments.subinstruments import DivinerSubInstrument, SubInstrument, MiniRFSubInstrument
+from src.SPICE.config import DIVINER_SUBINSTRUMENTS, LOLA_INSTRUMENT_IDS, LRO_STR_ID, MINI_RF_CHANNELS, LROC_NAC_IDS, LROC_WAC_IDS
 
 logger = logging.getLogger(__name__)
 
-
-LRO_STR_ID = "LUNAR RECONNAISSANCE ORBITER"
-
-
-DIVINER_INSTRUMENT_IDS = [-85211, -85212, -85213, -85214, -85215, -85216, -85221, -85222, -85223]
 
 
 class DivinerInstrument(BaseInstrument):
 
     name = "DIVINER"
     satellite_name = LRO_STR_ID
-    frame = "LRO_DLRE"
+    # LRO spacecraft attitude frame
+    frame = "LRO_SC_BUS"
     # Instruments are normalized into the same frame
-    sub_instruments = [FrameCorrectedSubInstrument(naif_id, "LRO_DLRE") for naif_id in DIVINER_INSTRUMENT_IDS]
+    sub_instruments = [DivinerSubInstrument(naif_id, _id, pixel_key) for naif_id, _id, pixel_key in DIVINER_SUBINSTRUMENTS]
 
 
-# class DIVINERInstrument(Instrument):
-#     sweep_iterator_class = LROSweepIterator
-
-#     name = "DIVINER"
-#     instrument_ids = DIVINER_INSTRUMENT_IDS
-#     # Frame of the instrument
-#     frame = LRO_DIVINER_FRAME_STR_ID
-#     satellite_frame = LRO_STR_ID
-
-#     # Until succesfull Lunara projection
-#     offset_days = 6.3552
-
-#     # Distance on the Lunar surface between the middle of all suinstruments and furthest subinstrument (4.3 Km measured from low sample)
-#     subinstrumen_offset = 6
-#     # Distance from projected boresight to bound
-#     fov_offset = 3
-
-#     # Distance of fov from pit treshold
-#     distance_tolerance = 12 * QUERY_RADIUS_MULTIPLIER
+class LolaInstrument(BaseInstrument):
+    
+    name = "LOLA"
+    satellite_name = LRO_STR_ID
+    # LRO spacecraft attitude frame
+    frame = "LRO_SC_BUS"
+    # Instruments are normalized into the same frame
+    sub_instruments = [SubInstrument(naif_id) for naif_id in LOLA_INSTRUMENT_IDS]
 
 
-# class LOLAInstrument(Instrument):
-#     sweep_iterator_class = LROSweepIterator
+class MiniRFInstrument(BaseInstrument):
+    """https://pds-geosciences.wustl.edu/lro/lro-l-mrflro-4-cdr-v1/lromrf_0001/document/dp_sis/mrflro_dp_sis.pdf"""
 
-#     name = "LOLA"
-#     instrument_ids = LOLA_INSTRUMENT_IDS
-#     # Frame of the instrument
-#     frame = LRO_LOLA_FRAME_STR_ID
-#     satellite_frame = LRO_STR_ID
-#     # Until succesfull Lunara projection
-#     offset_days = 6.3552
+    name = "MiniRF"
+    satellite_name = LRO_STR_ID
+    # LRO spacecraft attitude frame
+    frame = "LRO_SC_BUS"
+    # Instruments are normalized into the same frame
+    sub_instruments = [MiniRFSubInstrument(channel) for channel in MINI_RF_CHANNELS]
 
-#     ### Offsets calculating in additional tolerance - include spots sensed by instrument boiunds too, compute only the avarage boresight
-#     # Distance on the Lunar surface between the middle of all suinstruments and furthest subinstrument (4.3 Km measured from low sample)
-#     subinstrumen_offset = 1
-#     # Distance from projected boresight to bound
-#     fov_offset = 1
-
-#     ### Distance tolerance - how far data from our points of interest are we interested int
-#     distance_tolerance = 12 * QUERY_RADIUS_MULTIPLIER
-
-
-# class MiniRFInstrument(Instrument):
-#     sweep_iterator_class = LROSweepIterator
-
-#     name = "MiniRF"
-#     instrument_ids = MINIRF_INSTRUMENT_IDS
-#     # Frame of the instrument
-#     # frame = LRO_MINIRF_FRAME_STR_ID
-#     frame = "LRO_SC_BUS"
-#     satellite_frame = LRO_STR_ID
-#     # Until succesfull Lunara projection
-#     offset_days = 6.3552
-
-#     # Distance on the Lunar surface between the middle of all suinstruments and furthest subinstrument (4.3 Km measured from low sample)
-#     subinstrumen_offset = 6
-#     # Distance from projected boresight to bound
-#     fov_offset = 3
-
-#     # Distance of fov from pit treshold
-#     distance_tolerance = 12 * QUERY_RADIUS_MULTIPLIER
-
-#     def instantiate_subinstruments(self):
-#         """Missing instrument kernel, instrument metadata has to be configured manually"""
-#         self.sub_instruments[self.instrument_ids[0]] = Instrument.SubInstrument(
-#             _id=self.instrument_ids[0],
-#             frame=self.frame,
-#             boresight=spice.mxv(
-#                 spice.pxform(LRO_MINIRF_FRAME_STR_ID, self.frame, self.current_simulation_timestamp_et), [0, 0, 1]
-#             ),
-#             # TODO: Use this: https://naif.jpl.nasa.gov/naif/data_lunar.html
-#             bounds=...,
-#         )
+class LROCNACInstrument(BaseInstrument):
+    """
+    LROC Narrow Angle Camera instrument.
+    This instrument is defined by two subinstruments:
+      - NAC-L (NAIF ID -85600)
+      - NAC-R (NAIF ID -85610)
+    Each subinstrument’s FOV and distortion parameters are retrieved
+    via spice.getfov using the instrument kernel.
+    """
+    name = "LROC_NAC"
+    satellite_name = LRO_STR_ID
+    # We choose a common reference frame (e.g., the LRO spacecraft bus frame)
+    frame = "LRO_SC_BUS"
+    sub_instruments = [SubInstrument(naif_id) for naif_id in LROC_NAC_IDS]
 
 
-# class LROCWACInstrument(Instrument):
-#     sweep_iterator_class = LROSweepIterator
+class LROCWACInstrument(BaseInstrument):
+    """
+    LROC Wide Angle Camera instrument.
+    This instrument includes multiple filters, each with its own FOV,
+    as defined in the instrument kernel. The NAIF IDs for the WAC filters are:
+      - VIS: -85631, -85632, -85633, -85634, -85635
+      - UV:  -85641, -85642
+    They are collected here as subinstruments.
+    """
+    name = "LROC_WAC"
+    satellite_name = LRO_STR_ID
+    frame = "LRO_SC_BUS"
+    sub_instruments = [SubInstrument(naif_id) for naif_id in LROC_WAC_IDS]
 
-#     name = "LROC WAC"
-
-#     frame = ...
-#     satellite_frame = LRO_STR_ID
-#     # Until succesfull Lunar projection
-#     offset_days = 6.3552
-
-#     # FOV attributes TBD
-#     subinstrumen_offset = ...
-#     fov_offset = ...
-#     distance_tolerance = ...
-
-
-# class LROCNACInstrument(Instrument):
-#     sweep_iterator_class = LROSweepIterator
-
-#     name = "LROC NAC"
-
-#     frame = ...
-#     satellite_frame = LRO_STR_ID
-#     # Until succesfull Lunar projection
-#     offset_days = 6.3552
-
-#     # FOV attributes TBD
-#     subinstrumen_offset = ...
-#     fov_offset = ...
-#     distance_tolerance = ...

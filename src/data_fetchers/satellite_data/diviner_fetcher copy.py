@@ -28,7 +28,8 @@ from src.config.diviner_config import DIVINER_BASE_URL, BASE_SUFFIX
 SOFT_TRESHOLD = 12.5
 
 
-MAX_PROCESSING = 5
+
+
 MAX_DOWNLOADS = 20
 MAX_PROCESSES = 28
 

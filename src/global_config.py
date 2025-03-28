@@ -1,14 +1,14 @@
+import os
 
+### System level confoguration
+HDD_BASE_PATH = os.environ.get("UTILITY_VOLUME", "/media/mglos/HDD_8TB4/TMP")
 
-LUNAR_RADIUS = 1737.4  # km
-
+## Vanity
 TQDM_NCOLS = 156
 
-MAX_CONCURRENT_DOWNLOADS = 8
+### Lunar configuration
+LUNAR_RADIUS = 1737.4  # km
 
-
-HDD_BASE_PATH = "/media/mglos/HDD_8TB3/"
-
-
-MAX_DOWNLOADS = 20
-MAX_PROCESSES = 28
+# Use more precise lunar model
+#LUNAR_FRAME = "MOON_ME"
+LUNAR_FRAME = "MOON_PA_DE440"

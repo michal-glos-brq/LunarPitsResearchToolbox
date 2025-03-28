@@ -3,7 +3,7 @@
 Lunar Surface DSK Kernel Generator for SPICE
 ====================================================
 
-Author: Michal Gloš
+Author: Michal Glos
 University: Brno University of Technology (VUT)
 Faculty: Faculty of Electrical Engineering and Communication (FEKT)
 Diploma Thesis Project
@@ -33,6 +33,7 @@ import subprocess
 import logging
 import requests
 from tqdm import tqdm
+from urllib.parse import urljoin
 
 import pandas as pd
 import numpy as np
@@ -43,10 +44,60 @@ from astropy.coordinates import SphericalRepresentation
 
 from src.global_config import LUNAR_FRAME, TQDM_NCOLS
 from src.SPICE.kernel_utils.spice_utils import BaseKernel
-from src.SPICE.kernel_utils.kernel_management import LunarKernelManager
-from src.SPICE.config import LUNAR_TIF_DATA_URL, DSK_FILE_CENTER_BODY_ID, DSK_FILE_SURFACE_ID, FINSCL, CORSCL, WORKSZ, VOXPSZ, VOXLSZ, MAKVTL, SPXISZ, DCLASS, LUNAR_FRAME, CORSYS, CORPAR
+from src.SPICE.config import (
+    LUNAR_TIF_DATA_URL,
+    DSK_FILE_CENTER_BODY_ID,
+    DSK_FILE_SURFACE_ID,
+    BUNNY_PASSWORD,
+    BUNNY_BASE_URL,
+    BUNNY_STORAGE,
+    FINSCL,
+    CORSCL,
+    WORKSZ,
+    VOXPSZ,
+    VOXLSZ,
+    MAKVTL,
+    SPXISZ,
+    DCLASS,
+    CORSYS,
+    CORPAR,
+    root_path,
+    generic_url,
+)
+from src.global_config import LUNAR_FRAME, HDD_BASE_PATH
 
 logger = logging.getLogger(__name__)
+
+
+# We have to have same basic kernels loaded in order to create the DSK model
+KERNELS = [
+    BaseKernel("https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls", root_path("lsk/naif0012.tls")),
+    BaseKernel(generic_url("pck/pck00010.tpc"), root_path("pck/pck00010.tpc")),
+    BaseKernel(generic_url("pck/moon_pa_de421_1900-2050.bpc"), root_path("pck/moon_pa_de421_1900-2050.bpc")),
+    BaseKernel(generic_url("fk/satellites/moon_080317.tf"), root_path("fk/satellites/moon_080317.tf")),
+    # Do wee need less quality DSK lunar model?
+    BaseKernel(
+        "https://naif.jpl.nasa.gov/pub/naif/pds/wgc/lessons/event_finding_kplo_old/kernels/dsk/moon_lowres.bds",
+        root_path("moon_lowres.bds"),
+    ),
+]
+
+
+if LUNAR_FRAME == "MOON_ME":
+    KERNELS += [
+        BaseKernel(generic_url("fk/satellites/moon_assoc_me.tf"), root_path("fk/moon_assoc_me.tf")),
+        BaseKernel(generic_url("fk/satellites/moon_assoc_pa.tf"), root_path("fk/moon_assoc_pa.tf")),
+    ]
+
+elif LUNAR_FRAME == "MOON_PA_DE440":
+    KERNELS += [
+        BaseKernel(generic_url("fk/satellites/moon_de440_220930.tf"), root_path("fk/moon_de440_220930.tf")),
+        BaseKernel(generic_url("pck/moon_pa_de440_200625.bpc"), root_path("pck/moon_pa_de440_200625.bpc")),
+        BaseKernel(generic_url("spk/planets/de440.bsp"), root_path("spk/de440.bsp")),
+    ]
+
+else:
+    raise ValueError("Unknown lunar frame specified.")
 
 
 class DetailedModelDSKKernel(BaseKernel):
@@ -58,28 +109,44 @@ class DetailedModelDSKKernel(BaseKernel):
 
         If DSK file is not found locally, processing begins with kernel instantiation.
         """
-        self.filename = filename
+        self.filename = filename # The DSK Kernel name
         self.base_filename = ".".join(filename.split(".")[:-1])
         self.tif_scale_percents = tif_sample_rate * 100
-        super().__init__(filename, LUNAR_TIF_DATA_URL)
+        super().__init__(LUNAR_TIF_DATA_URL, filename)
 
+        # If the DSK model does not exist
         if not self.file_exists:
-            if not self.xyz_file_exists:
-                if not self.tif_file_exists:
-                    self.download_tif_file()
-                self.create_xyz_from_tif()
+            # First look whether the model is existing remotely
+            if self.remote_dsk_exists:
+                self.remote_dsk_download()
+            else:
+                if not self.xyz_file_exists:
+                    if not self.tif_file_exists:
+                        self.download_tif_file()
+                    self.create_xyz_from_tif()
 
-            lunar_kernel_manager = LunarKernelManager(
-                LUNAR_FRAME, detailed=False
-            )  # We now work on the more detailed version
-            lunar_kernel_manager.load_static_kernels()  # No dynamic kernels, no need to obtain arbitrary time to load them
-            self.create_dsk_from_xyz()
-            lunar_kernel_manager.unload_all()
-            del lunar_kernel_manager
+                for kernel in KERNELS:
+                    kernel.load()
+                self.create_dsk_from_xyz()
+                for kernel in KERNELS:
+                    kernel.unload()
+
+    @property
+    def remote_dsk_exists(self):
+        url = urljoin(BUNNY_BASE_URL, f"{BUNNY_STORAGE}")
+        response = requests.get(url, headers={"AccessKey": BUNNY_PASSWORD})
+        if response.status_code != 200:
+            logger.error("Failed to access BunnyCDN storage.")
+            return False
+        
+        filenames = [remote_file["ObjectName"] for remote_file in response.json()]
+        return self.filename.split("/")[-1] in filenames
+
 
     @property
     def tif_filename(self):
-        return self.base_filename + ".tif"
+        """Source data do not need dynamic name, hence keep the remote filename"""
+        return os.path.join(HDD_BASE_PATH, LUNAR_TIF_DATA_URL.split("/")[-1])
 
     @property
     def tif_file_exists(self):
@@ -93,27 +160,68 @@ class DetailedModelDSKKernel(BaseKernel):
     def xyz_file_exists(self):
         return os.path.exists(self.xyz_filename)
 
+    def remote_dsk_download(self):
+        url = urljoin(BUNNY_BASE_URL, f"{BUNNY_STORAGE}")
+        url = urljoin(url, f"{self.filename.split('/')[-1]}")
+        with requests.get(url, headers={"AccessKey": BUNNY_PASSWORD}, stream=True) as r:
+            print(r.status_code)
+            r.raise_for_status()  # Ensure request is successful
+            total_size = int(r.headers.get("content-length", 0))  # Get file size
+            block_size = 1024 * 1024  # 1 MB chunks
+
+            with open(self.filename, "wb") as f, tqdm(
+                total=total_size,
+                unit="B",
+                unit_scale=True,
+                unit_divisor=1024,
+                ncols=TQDM_NCOLS,
+                desc=f"Downloading DSK from BunnyCDN",
+                miniters=1  # Ensures frequent updates
+            ) as t:
+                for chunk in r.iter_content(block_size):
+                    if chunk:  # Filter out keep-alive chunks
+                        f.write(chunk)
+                        t.update(len(chunk))  # Update progress bar
+
     def download_tif_file(self):
         with requests.get(self.url, stream=True) as r:
             r.raise_for_status()
             total_size = int(r.headers.get("content-length", 0))
-            block_size = 1024
-            t = tqdm(total=total_size, unit="B", unit_scale=True, ncols=TQDM_NCOLS, desc="Downloading TIF file")
-            with open(self.tif_filename, "wb") as f:
-                for data in r.iter_content(block_size):
-                    t.update(len(data))
-                    f.write(data)
-            t.close()
+            block_size = 1024 ** 2  # 1 MB
+            with open(self.tif_filename, "wb") as f, tqdm(
+                total=total_size,
+                unit="B",
+                unit_scale=True,
+                unit_divisor=1024,
+                ncols=TQDM_NCOLS,
+                desc="Downloading TIF file",
+                miniters=1  # Ensure the progress bar updates frequently
+            ) as t:
+                for chunk in r.iter_content(block_size):
+                    if chunk:  # Filter out keep-alive new chunks
+                        f.write(chunk)
+                        t.update(len(chunk))
 
     def create_xyz_from_tif(self):
         command = [
-            "gdal_translate", "-of", "XYZ",
-            "-scale", "-32768", "32767", "-1737.4", "1737.4",
-            "-outsize", f"{self.tif_scale_percents:.2}%", f"{self.tif_scale_percents:.2}%",
-            "-a_nodata", "-32768", str(self.tif_filename), str(self.xyz_filename)
+            "gdal_translate",
+            "-of",
+            "XYZ",
+            "-scale",
+            "-32768",
+            "32767",
+            "-1737.4",
+            "1737.4",
+            "-outsize",
+            f"{self.tif_scale_percents:.2}%",
+            f"{self.tif_scale_percents:.2}%",
+            "-a_nodata",
+            "-32768",
+            str(self.tif_filename),
+            str(self.xyz_filename),
         ]
         result = subprocess.run(command, capture_output=True, text=True)
-    
+
         if result.returncode != 0:
             raise RuntimeError(f"Failed to convert TIF to XYZ: {result.stderr}")
 
@@ -122,14 +230,14 @@ class DetailedModelDSKKernel(BaseKernel):
         # Extract coordinates
         x = df["x"].to_numpy()
         y = df["y"].to_numpy()
-        z = (df["z"] / 100).to_numpy().astype(np.float32)  # Convert elevation to meters
+        z = (df["z"] / 100).to_numpy().astype(np.float32)  # Convert elevation to kilometers
 
         lon = np.interp(x, (x.min(), x.max()), (-180, 180)) * u.deg
         lat = (90 - (y - y.min()) / (y.max() - y.min()) * 180) * u.deg
         lat = -lat  # Invert latitude
 
         # Compute the 3D radius and convert to Cartesian
-        scalar_radius = spice.bodvrd("MOON", "RADII", 3)[1][0] * 1000
+        scalar_radius = spice.bodvrd("MOON", "RADII", 3)[1][0]
         radius = (scalar_radius + z) * u.m
         spherical_coords = SphericalRepresentation(lon, lat, radius)
         cartesian_coords = spherical_coords.to_cartesian()

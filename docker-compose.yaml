@@ -5,7 +5,7 @@ services:
     ports:
       - "27017:27017"
     volumes:
-      - /media/mglos/HDD_8TB3/MONGO/DB:/data/db
+      - /media/mglos/HDD_8TB4/MONGO/DB:/data/db
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: password
