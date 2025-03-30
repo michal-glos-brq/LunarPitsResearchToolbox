@@ -18,9 +18,16 @@ MAX_LOADED_DYNAMIC_KERNELS = 3
 KEEP_DYNAMIC_KERNELS = False
 
 SPICE_CHUNK_SIZE = 8192
+# Internet request timeouts
 SPICE_READ_TIMEOUT = 15
 SPICE_TOTAL_TIMEOUT = 60
 
+# SPICE kernel file lock timeout
+SPICE_KERNEL_LOCK_TIMEOUT = 60
+SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT = 60 * 10
+DSK_KERNEL_LOCK_TIMEOUT = 60 * 15 # 15 minutes to wait
+# How often to poll for the lock
+KERNEL_LOCK_POLL_INTERVAL = 1
 
 ### Some SpiceyPy constants
 SPICE_FOLDER = os.path.join(HDD_BASE_PATH, "SPICE")

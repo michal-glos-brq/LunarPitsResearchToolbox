@@ -37,10 +37,10 @@ from urllib.parse import urljoin
 
 import pandas as pd
 import numpy as np
-
 import spiceypy as spice
 import astropy.units as u
 from astropy.coordinates import SphericalRepresentation
+from filelock import FileLock
 
 from src.global_config import LUNAR_FRAME, TQDM_NCOLS
 from src.SPICE.kernel_utils.spice_kernels import BaseKernel
@@ -63,6 +63,8 @@ from src.SPICE.config import (
     CORPAR,
     DEFAULT_TIF_SAMPLE_RATE,
     TIF_TO_KM_SCALE,
+    DSK_KERNEL_LOCK_TIMEOUT,
+    KERNEL_LOCK_POLL_INTERVAL,
     root_path,
     generic_url,
 )
@@ -117,22 +119,24 @@ class DetailedModelDSKKernel(BaseKernel):
         self.tif_scale_percents = tif_sample_rate * 100
         super().__init__(LUNAR_TIF_DATA_URL, filename)
 
-        # If the DSK model does not exist
-        if not self.file_exists:
-            # First look whether the model is existing remotely
-            if self.remote_dsk_exists:
-                self.remote_dsk_download()
-            else:
-                if not self.xyz_file_exists:
-                    if not self.tif_file_exists:
-                        self.download_tif_file()
-                    self.create_xyz_from_tif()
 
-                for kernel in KERNELS:
-                    kernel.load()
-                self.create_dsk_from_xyz()
-                for kernel in KERNELS:
-                    kernel.unload()
+        with FileLock(self.filename + ".lock", timeout=DSK_KERNEL_LOCK_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL):
+            # If the DSK model does not exist
+            if not self.file_exists:
+                # First look whether the model is existing remotely
+                if self.remote_dsk_exists:
+                    self.remote_dsk_download()
+                else:
+                    if not self.xyz_file_exists:
+                        if not self.tif_file_exists:
+                            self.download_tif_file()
+                        self.create_xyz_from_tif()
+
+                    for kernel in KERNELS:
+                        kernel.load()
+                    self.create_dsk_from_xyz()
+                    for kernel in KERNELS:
+                        kernel.unload()
 
     @property
     def remote_dsk_exists(self):

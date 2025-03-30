@@ -1,12 +1,15 @@
 import time
 import logging
+from contextlib import nullcontext
 from typing import Optional, List, Dict
 from dataclasses import dataclass
 
+import numpy as np
+from celery import Task
 from tqdm import tqdm
 import spiceypy as spice
+from datetime import timedelta
 from astropy.time import Time, TimeDelta
-import numpy as np
 from pymongo.collection import Collection
 
 from src.SPICE.kernel_utils.kernel_management import BaseKernelManager
@@ -86,6 +89,17 @@ class InstrumentSimulationState:
             f"🎯 {self.fov_widths.maximum:>8.2f}",
         ]
 
+    def to_summary_dict(self) -> Dict[str, float]:
+        return {
+            "collection": self.success_collections.name,
+            "positive_batch_size": len(self.positive_sensing_batch),
+            "failed_batch_size": len(self.failed_computation_batch),
+            "total_success": self.total_success,
+            "total_failed": self.total_failed,
+            "max_height": round(self.heights.maximum, 3),
+            "max_fov_width": round(self.fov_widths.maximum, 3),
+        }
+
 
 class RemoteSensingSimulator:
     """
@@ -125,7 +139,14 @@ class RemoteSensingSimulator:
         self.kernel_manager.step(self.current_simulation_timestamp)
 
 
-    def start_simulation(self, start_time: Optional[Time] = None, end_time: Optional[Time] = None):
+    def start_simulation(self, start_time: Optional[Time] = None, end_time: Optional[Time] = None, interactive_progress: bool = True, current_task: Optional[Task] = None):
+        """
+        Start the simulation for the given time interval.
+        :param start_time: Start time of the simulation
+        :param end_time: End time of the simulation
+        :param interactive_progress: Whether to show the progress bar, if false, just dump progress and logs
+        :param current_task: Celery task object, if provided, will be used to update the progress
+        """
 
         start_time = self.kernel_manager.min_loaded_time if start_time is None else start_time
         end_time = self.kernel_manager.max_loaded_time if end_time is None else end_time
@@ -158,7 +179,16 @@ class RemoteSensingSimulator:
                     threads[thread_id].join()
                     threads.pop(thread_id)
 
-        with tqdm(total=(end_time - start_time).sec, unit="time_step") as pbar:
+        def format_td(td: timedelta) -> str:
+            total = int(td.total_seconds())
+            return f"{total // 3600:02}:{(total % 3600) // 60:02}:{total % 60:02}"
+
+        total_seconds = (end_time - start_time).sec
+        simulation_duration = timedelta(seconds=(end_time - start_time).sec)
+        simulation_timekeeper, simulation_duration_formatted = timedelta(seconds=0), format_td(simulation_duration)
+        pbar = tqdm(total=total_seconds, unit="time_step") if interactive_progress else nullcontext()
+
+        with pbar:
             while self.current_simulation_timestamp < end_time:
                 try:
 
@@ -246,27 +276,42 @@ class RemoteSensingSimulator:
                         self._computation_timedelta = SIMULATION_STEP
 
                 except Exception as e:
-                    logging.error(f"Error during simulation step: {e}")
+                    logging.warning(f"Error during simulation step: {e}")
 
 
                 finally:
-                    # Periodically dump the state of simulation
-                    if time.time() - real_time > SIM_STATE_DUMP_INTERVAL:
-                        state_string_prefix = "========== SIMULATION STATE REPORT ==========\n"
-                    
-                        block_lines = [state.dump_status_lines() for state in self.instrument_simulation_states.values()]
-                        transposed = zip(*block_lines)
-                    
-                        aligned_output = "\n".join("   ".join(f"{s:<16}" for s in line_parts) for line_parts in transposed)
-                        state_string = aligned_output + f"\n🚀  Locally max spacecraft speed: {max_speed.maximum:.2f} km/s\n"
-                    
-                        tqdm.write(state_string_prefix + state_string)
-                        real_time = time.time()
-
                     # Simulation maintnance, have to be always executed!
                     self._simulation_step()
-                    pbar.update(self.computation_timedelta.sec)
+                    simulation_timekeeper += timedelta(seconds=self.computation_timedelta.sec)
 
+                    # Periodically dump the state of simulation
+                    if time.time() - real_time > SIM_STATE_DUMP_INTERVAL:
+                        if interactive_progress:
+                            state_string_prefix = "========== SIMULATION STATE REPORT ==========\n"
+                    
+                            block_lines = [state.dump_status_lines() for state in self.instrument_simulation_states.values()]
+                            transposed = zip(*block_lines)
+                    
+                            aligned_output = "\n".join("   ".join(f"{s:<16}" for s in line_parts) for line_parts in transposed)
+                            state_string = aligned_output + f"\n🚀  Locally max spacecraft speed: {max_speed.maximum:.2f} km/s\n"
+                            state_string = state_string_prefix + state_string
+
+                            tqdm.write(state_string)
+                            if current_task is not None:
+                                state = {instrument.name: instrument_state.to_summary_dict() for instrument, instrument_state in self.instrument_simulation_states.items()}
+                                state["sc_speed"] = max_speed.maximum
+                                current_task.update_state(state="PROGRESS", meta={"state": state, "progress [%]": 100 * simulation_timekeeper / simulation_duration})
+
+                        real_time = time.time()
+
+
+                    if interactive_progress:
+                        pbar.update(self.computation_timedelta.sec)
+                    else:
+                        logging.info(f"Simulated time: {format_td(simulation_timekeeper)} / {simulation_duration_formatted}")
+
+
+                    # Push data to the database
                     for instrument in self.instruments:
 
                         instrument_state: InstrumentSimulationState = self.instrument_simulation_states[instrument.name]
@@ -282,6 +327,16 @@ class RemoteSensingSimulator:
                             instrument_state.failed_computation_batch = []
                             check_threads()
 
+        # Final push to the database
+        for instrument in self.instruments:
+            instrument_state: InstrumentSimulationState = self.instrument_simulation_states[instrument.name]
+            if len(instrument_state.positive_sensing_batch) > 0:
+                thread = Sessions.start_background_batch_insert(instrument_state.positive_sensing_batch, instrument_state.success_collections)
+                threads.append(thread)
+
+            if len(instrument_state.failed_computation_batch) > 0:
+                thread = Sessions.start_background_batch_insert(instrument_state.failed_computation_batch, instrument_state.failed_collections)
+                threads.append(thread)
 
         # Since we want to kill all threads when the main thread exits, let's await them just to be sure!
         for thread in threads:
