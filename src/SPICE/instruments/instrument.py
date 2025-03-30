@@ -3,7 +3,7 @@
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Dict, Union
+from typing import List, Dict, Union, Tuple
 from functools import lru_cache, partial
 
 import numpy as np
@@ -15,15 +15,6 @@ from src.SPICE.config import ABBERRATION_CORRECTION, BOUNDS_TO_BORESIGHT_BUFFER_
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
-
-
-
-# TODO: Some bounds approximation, recalculation of bounds and distances from boresight and stuff ...
-
-@lru_cache(maxsize=1024)
-def spacecraft_position(spacecraft_name: str, et: float, frame: str) -> np.array:
-    """Returns spacecraft position in the given frame at the given time"""
-    return spice.spkpos(spacecraft_name, et, frame, ABBERRATION_CORRECTION, "MOON")[0]
 
 
 @dataclass
@@ -38,19 +29,19 @@ class BaseInstrument(ABC):
     """This class serves the purpose of defining all the configurable attributes of instruments"""
 
     STATIC_INSTRUMENT = False
+    DYNAMIC_KERNEL_OFFSET_JD = 0
 
     def __init__(self):
     # This should probably be bounds, but those are bounds for a single subinstrument
-        self._bound = None
-        self._bounds = None
-        self._boresight = None
-        self._boresights = None
-        self._bounds_angle = None
+        # self._bound = None
+        # self._bounds = None
+        # self._boresight = None
 
-        self._boresight_to_bound_distance_buffer = np.zeros((BOUNDS_TO_BORESIGHT_BUFFER_LEN))
-        self._boresight_to_bound_distance_index = 0
-        self._boresight_to_bound_distance = 0
-        self._last_recalculation_et = None
+        # Static boresight - aggregated boresight in static frame, used for instruments with dynamic boresight relatively to the satellite
+        self._static_boresight, self._static_boresight_frame = None, None
+        self._static_bounds, self._static_bounds_frame = None, None
+        # self._boresights = None
+        self._bounds_angle = None
 
     @property
     @abstractmethod
@@ -76,12 +67,14 @@ class BaseInstrument(ABC):
         """List of subinstrument objects"""
         ...
 
+    def calculate_spacecraft_position(self, et: float, frame: str) -> np.array:
+        """Returns spacecraft position in the given frame at the given time"""
+        return spice.spkpos(self.satellite_name, et, frame, ABBERRATION_CORRECTION, "MOON")[0]
 
-    def bounds_to_boresight_distance(self, et: float) -> float:
-        """Distance from boresight to bounds"""
-        if self._last_recalculation_et != et:
-            self.recalculate_bounds_to_boresight_distance(et)
-        return self._boresight_to_bound_distance
+    def calculate_spacecraft_position_and_velocity(self, et: float, frame: str) -> Tuple[np.array]:
+        """Returns spacecraft position and velocity in the given frame at the given time"""
+        state = spice.spkezr(self.satellite_name, et, frame, ABBERRATION_CORRECTION, "MOON")[0]
+        return state[:3], state[3:]
 
     def recalculate_bounds_to_boresight_distance(self, et: float = 0) -> np.array:
         """
@@ -93,42 +86,42 @@ class BaseInstrument(ABC):
         self._last_recalculation_et = et
         projection = self.project_boresight(et).projection
 
-        projected_bounds = np.stack([self.project_vector(et, bnd).projection for bnd in self.bounds(et)])
-        distances = np.linalg.norm(projected_bounds - projection, axis=1)
+        projected_bounds = np.stack([bnd.projection for bnd in self.project_bounds(et)])
+        # projected_bounds = np.stack([self.project_vector(et, bnd).projection for bnd in self.bounds(et)])
+        return np.linalg.norm(projected_bounds - projection, axis=1).max()
 
-        self._boresight_to_bound_distance_buffer[self._boresight_to_bound_distance_index] = distances.max()
-        self._boresight_to_bound_distance_index = (self._boresight_to_bound_distance_index + 1) % BOUNDS_TO_BORESIGHT_BUFFER_LEN
-        self._boresight_to_bound_distance = self._boresight_to_bound_distance_buffer.max()
-
-
-
-    # def boresights(self, et: float = 0) -> np.array:
-    #     """Not transformed Boresight vectors for the instrument"""
-    #     return np.stack([sub_instr.boresight for sub_instr in self.sub_instruments])
 
     ### Boresight and bounds assume subinstruments are normalized into the same frame
     def boresight(self, et: float = 0) -> np.array:
         """Boresight vector for the instrument"""
-        if self._boresight is None and not self.STATIC_INSTRUMENT:
+        if self._static_boresight is None:
+            # Arbitrary choose the first frame - those frames are static relative to boresights
+            self._static_boresight_frame = self.sub_instruments[0].sub_instrument_frame if not self.STATIC_INSTRUMENT else self.frame
             boresights = []
             for sub_instr in self.sub_instruments:
-                boresights.append(sub_instr.transformed_boresight(self.frame, et=et))
-            self._boresight = np.stack(boresights).mean(axis=0)
-        return self._boresight
+                boresights.append(sub_instr.transformed_boresight(self._static_boresight_frame, et=et))
+            self._static_boresight = np.stack(boresights).mean(axis=0)
+
+        if self.STATIC_INSTRUMENT:
+            return self._static_boresight
+        else:
+            # Use first subinstrument to calculate the transformation
+            return self.sub_instruments[0].transform_vector(self.frame, self._static_boresight, et)
 
 
     def bounds(self, et: float = 0) -> np.array:
         """Bounds of the instrument"""
-        if self._bounds is None and not self.STATIC_INSTRUMENT:
+        if self._static_bounds is None:
+            # Arbitrary choose the first frame - those frames are static relative to boresights
+            self._static_bounds_frame = self.sub_instruments[0].sub_instrument_frame if not self.STATIC_INSTRUMENT else self.frame
             bounds = []
             for sub_instr in self.sub_instruments:
-                bounds.append(sub_instr.transformed_bounds(self.frame, et=et))
-            self._bounds = np.stack(bounds).reshape(-1, 3)
-        return self._bounds
-
-    # def pareto_bounds(self) -> np.array:
-    #     """Bounds of the instrument"""
-    #     raise NotImplemented("Stuck to using redundant self.bounds")
+                bounds.append(sub_instr.transformed_bounds(self._static_bounds_frame, et=et))
+            self._static_bounds = np.stack(bounds).reshape(-1, 3)
+        if self.STATIC_INSTRUMENT:
+            return self._static_bounds
+        else:
+            return np.stack([self.sub_instruments[0].transform_vector(self.frame, bnd, et) for bnd in self._static_bounds]).reshape(-1, 3)
 
     def project_vector(self, et, vector) -> np.array:
         """
@@ -154,5 +147,9 @@ class BaseInstrument(ABC):
         Project subinstrument-mean boresight onto lunar surface
         """
         return self.project_vector(et, self.boresight(et))
-        # Spacecraft relative is point relative to the point of interception. Add those 2 vectors to get position of spacecraft in the self.frame reference
-        # return {"et": et, "projection": boresight_point, "projection_trgepc": boresight_trgepc, 'spacecraft_relative': spacecraft_relative}
+
+    def project_bounds(self, et) -> List[ProjectionPoint]:
+        """
+        Projects bounds onto lunar surface
+        """
+        return [self.project_vector(et, bnd) for bnd in self.bounds(et)]

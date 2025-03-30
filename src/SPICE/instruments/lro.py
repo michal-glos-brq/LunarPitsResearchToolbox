@@ -11,7 +11,10 @@ logger = logging.getLogger(__name__)
 
 
 class DivinerInstrument(BaseInstrument):
+    # To correctly load initial state, min_time + 4 julian days ...
 
+    STATIC_INSTRUMENT = False
+    DYNAMIC_KERNEL_OFFSET_JD = 4.0
     name = "DIVINER"
     satellite_name = LRO_STR_ID
     # LRO spacecraft attitude frame
@@ -49,6 +52,7 @@ class LROCNACInstrument(BaseInstrument):
     Each subinstrument’s FOV and distortion parameters are retrieved
     via spice.getfov using the instrument kernel.
     """
+    STATIC_INSTRUMENT = False
     name = "LROC_NAC"
     satellite_name = LRO_STR_ID
     # We choose a common reference frame (e.g., the LRO spacecraft bus frame)
@@ -65,6 +69,7 @@ class LROCWACInstrument(BaseInstrument):
       - UV:  -85641, -85642
     They are collected here as subinstruments.
     """
+    STATIC_INSTRUMENT = False
     name = "LROC_WAC"
     satellite_name = LRO_STR_ID
     frame = "LRO_SC_BUS"

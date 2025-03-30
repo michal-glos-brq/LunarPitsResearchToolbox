@@ -1,16 +1,90 @@
-from typing import Optional, List
+import time
+import logging
+from typing import Optional, List, Dict
+from dataclasses import dataclass
 
 from tqdm import tqdm
 import spiceypy as spice
 from astropy.time import Time, TimeDelta
+import numpy as np
+from pymongo.collection import Collection
 
 from src.SPICE.kernel_utils.kernel_management import BaseKernelManager
-from src.SPICE.instruments.instrument import BaseInstrument
+from src.SPICE.instruments.instrument import BaseInstrument, ProjectionPoint
 from src.db.interface import Sessions
 from src.simulators.filters import BaseFilter
-from src.simulators.config import SIMULATION_STEP
-from src.config import LRO_SPEED, TIME_STEP, MAX_TIME_STEP, SIMULATION_BATCH_SIZE
+from src.simulators.config import (
+    SIMULATION_STEP,
+    DYNAMIC_MAX_BUFFER_FOV_WIDTH_SIZE,
+    DYNAMIC_MAX_BUFFER_FOV_WIDTH_UPDATE_RATE,
+    DYNAMIC_MAX_BUFFER_HEIGHT_SIZE,
+    DYNAMIC_MAX_BUFFER_HEIGHT_UPDATE_RATE,
+    MONGO_PUSH_BATCH_SIZE,
+    TOLERANCE_MARGIN,
+    DYNAMIC_MAX_BUFFER_SPACECRAFT_VELOCITY_SIZE,
+    DYNAMIC_MAX_BUFFER_SPACECRAFT_VELOCITY_UPDATE_RATE,
+    SIM_STATE_DUMP_INTERVAL,
+)
 
+
+# from src.config import LRO_SPEED, TIME_STEP, MAX_TIME_STEP, SIMULATION_BATCH_SIZE
+
+
+class DynamicMaxBuffer:
+    """
+    This class is used to create a dynamic buffered max value.
+    """
+
+    def __init__(self, buffer_size: int):
+        self.buffer_size = buffer_size
+        self.buffer = np.zeros((buffer_size))
+        self.index = 0
+        self.maximum = float("-inf")
+        self.maximum_ttl = buffer_size
+
+    def add(self, value: float):
+        self.buffer[self.index] = value
+
+        if value >= self.maximum:
+            # New max found — reset TTL
+            self.maximum = value
+            self.maximum_ttl = self.buffer_size
+        else:
+            # Not the new max — decrease TTL
+            self.maximum_ttl -= 1
+            if self.maximum_ttl == 0:
+                # TTL expired — recompute max + reset TTL
+                self.maximum = self.buffer.max()
+                # Find index of current max value to estimate new TTL
+                max_pos = np.argmax(self.buffer)
+                distance = (max_pos - self.index) % self.buffer_size
+                self.maximum_ttl = distance if distance != 0 else self.buffer_size
+
+        self.index = (self.index + 1) % self.buffer_size
+
+
+@dataclass
+class InstrumentSimulationState:
+    success_collections: Collection
+    failed_collections: Collection
+    positive_sensing_batch: List[Dict]
+    failed_computation_batch: List[Dict]
+    heights: DynamicMaxBuffer
+    fov_widths: DynamicMaxBuffer
+    heights_counter: int = DYNAMIC_MAX_BUFFER_HEIGHT_SIZE
+    fov_widths_counter: int = DYNAMIC_MAX_BUFFER_FOV_WIDTH_SIZE
+    total_success: int = 0
+    total_failed: int = 0
+    
+    def dump_status_lines(self) -> List[str]:
+        name = self.success_collections.name[:10]  # Shorten if too long
+        return [
+            f"{name:^12}",  # Centered
+            f"✅ {len(self.positive_sensing_batch):>4} | T {self.total_success:<5}",
+            f"❌ {len(self.failed_computation_batch):>4} | T {self.total_failed:<5}",
+            f"📏 {self.heights.maximum:>8.2f}",
+            f"🎯 {self.fov_widths.maximum:>8.2f}",
+        ]
 
 
 class RemoteSensingSimulator:
@@ -23,23 +97,19 @@ class RemoteSensingSimulator:
     """
 
     
-    def __init__(self, instruments: List[BaseInstrument], filter: BaseFilter, kernel_manager: BaseKernelManager, simulation_start_time: Optional[Time] = None, simulation_end_time: Optional[Time] = None):
+    def __init__(self, instruments: List[BaseInstrument], filter_object: BaseFilter, kernel_manager: BaseKernelManager):
         self.instruments = instruments
-        self.filter = filter
+        self.filter = filter_object
         self.kernel_manager = kernel_manager
-        self.min_time = max(simulation_start_time, kernel_manager.min_loaded_time) if simulation_start_time is not None else kernel_manager.min_loaded_time
-        self.max_time = min(simulation_end_time, kernel_manager.max_loaded_time) if simulation_end_time is not None else kernel_manager.max_loaded_time
         self._computation_timedelta = SIMULATION_STEP
-
+        assert len(set([instrument.satellite_name for instrument in self.instruments])) == 1, f"All instruments have to be from the same satellite, but got {set([instrument.satellite_name for instrument in self.instruments])}"
 
     @property
     def computation_timedelta(self):
         return TimeDelta(self._computation_timedelta, format="sec")
 
-    def _setup_time(self, time: Optional[Time] = None):
+    def _setup_time(self, time: Time):
         """Setup or reset the simulation timing"""
-        if time is None:
-            time = self.min_time
         # initialize the simulation state
         self.current_simulation_step = 0
         self.current_simulation_timestamp_et = spice.str2et(time.utc.iso)
@@ -55,56 +125,31 @@ class RemoteSensingSimulator:
         self.kernel_manager.step(self.current_simulation_timestamp)
 
 
-    def _adjust_timestep(self, min_distance: float):
-        """Pass for now"""
-        # new_time_step = (min_distance - self.rough_treshold) / LRO_SPEED
-        # self.computation_timedelta = TimeDelta(min(max(TIME_STEP, new_time_step), MAX_TIME_STEP), format="sec")
-        # self.adjusted_timesteps.append(new_time_step)
-        # self.min_distances.append(min_distance)
-
-
-    def _calculate_state(self):
-        '''Calculate the projection of current instrument boresight'''
-        try:
-            # TODO: Instrument the persistant simulation state
-            # TODO: Maybe eventually group by satellite
-            # Projects to the lunar surface and looks for closest points (may be empty)
-            intersection = self.instrument.project_mean_boresight(self.current_simulation_timestamp_et)
-            distance = self.filter.rank_point(intersection["boresight"])
-            self.adjust_timestep(distance)
-            if distance < self.rough_treshold:
-                self._found_timestamps_cnt += 1
-                return {
-                    "et": self.current_simulation_timestamp_et,
-                    "timestamp_utc": self.current_simulation_timestamp.to_datetime(),
-                    "distance": distance,
-                    "boresight": intersection["boresight"].tolist(),
-                    "meta": {}
-                }, None
-            return None, None
-        except Exception as e:
-            # TODO: Persistent DB
-            self._failed_timestamps_cnt += 1
-            return None, {
-                "et": self.current_simulation_timestamp_et,
-                "timestamp_utc": self.current_simulation_timestamp.to_datetime(),
-                "error": str(e),                
-                "meta": {}
-            }
-
-    def start_simulation(self, start_time: Optional[Time] = None, end_time: Optional[Time] = None, batchsize: int = 1024):
-        # Establish progress tracking with persistant database
-
-        success_collection, failed_collection = Sessions._prepare_simulation_collections(self.instrument.name, self.filter.name)
+    def start_simulation(self, start_time: Optional[Time] = None, end_time: Optional[Time] = None):
 
         start_time = self.kernel_manager.min_loaded_time if start_time is None else start_time
         end_time = self.kernel_manager.max_loaded_time if end_time is None else end_time
 
-        self._setup_time(time=start_time)
+        self._setup_time(start_time)
+        real_time = time.time()
 
-        positive_sensing_batch = []
-        failed_computation_batch = []
+        self.instrument_simulation_states = {}
+        for instrument in self.instruments:
+            success_collection, failed_collection = Sessions.prepare_simulation_collections(instrument.name)
+            instrument_state = InstrumentSimulationState(
+                success_collections=success_collection,
+                failed_collections=failed_collection,
+                positive_sensing_batch=[],
+                failed_computation_batch=[],
+                heights=DynamicMaxBuffer(DYNAMIC_MAX_BUFFER_HEIGHT_SIZE),
+                fov_widths=DynamicMaxBuffer(DYNAMIC_MAX_BUFFER_FOV_WIDTH_SIZE)
+            )
+            instrument_state.heights.add(np.linalg.norm(instrument.project_boresight(self.current_simulation_timestamp_et).spacecraft_relative))
+            instrument_state.fov_widths.add(instrument.recalculate_bounds_to_boresight_distance(self.current_simulation_timestamp_et))
+            self.instrument_simulation_states[instrument.name] = instrument_state
 
+        max_speed = DynamicMaxBuffer(DYNAMIC_MAX_BUFFER_SPACECRAFT_VELOCITY_SIZE)
+        max_speed_counter = 0
         threads = []
 
         def check_threads():
@@ -113,29 +158,130 @@ class RemoteSensingSimulator:
                     threads[thread_id].join()
                     threads.pop(thread_id)
 
-
-        with tqdm(total=end_time - start_time, unit="time_step") as pbar:
+        with tqdm(total=(end_time - start_time).sec, unit="time_step") as pbar:
             while self.current_simulation_timestamp < end_time:
+                try:
 
-                projection, failed_projection = self._calculate_state()
+                    # Early rejection based on spacecraft position
+                    if max_speed_counter == 0:
+                        max_speed_counter = DYNAMIC_MAX_BUFFER_SPACECRAFT_VELOCITY_UPDATE_RATE
+                        spacecraft_position, spacecraft_velocity = self.instruments[0].calculate_spacecraft_position_and_velocity(self.current_simulation_timestamp_et, self.kernel_manager.main_reference_frame)
+                        max_speed.add(np.linalg.norm(spacecraft_velocity))
+                    else:
+                        spacecraft_position = self.instruments[0].calculate_spacecraft_position(self.current_simulation_timestamp_et, self.kernel_manager.main_reference_frame)
+                        max_speed_counter -= 1
 
-                if projection:
-                    positive_sensing_batch.append(projection)
-                if failed_projection:
-                    failed_computation_batch.append(failed_projection)
+                    rank = self.filter.rank_point(spacecraft_position)
 
-                self._simulation_step()
-                pbar.update(self.computation_timedelta.sec)
+                    distances_to_tresholds = []
+                    for instrument in self.instruments:
 
-                if len(positive_sensing_batch) >= batchsize:
-                    Sessions.background_insert_batch_timeseries_results(positive_sensing_batch, success_collection)
-                    positive_sensing_batch = []
-                    check_threads()
+                        instrument_state: InstrumentSimulationState = self.instrument_simulation_states[instrument.name]
+
+                        # Check for fast dismissal with spacecraft position
+                        if (distance := (rank - (instrument_state.heights.maximum + instrument_state.fov_widths.maximum + self.filter.hard_radius))) > 0:
+                            distances_to_tresholds.append(distance)
+                            continue
+
+                        try:
+                            # Went through screening, now actually compute the state
+                            projection: ProjectionPoint = instrument.project_boresight(self.current_simulation_timestamp_et)
+                            # Check how close is the closest point    
+                            rank = self.filter.rank_point(projection.projection)
+
+                            # Check if the projection is within the FOV
+                            if (distance := rank - (self.filter.hard_radius + instrument_state.fov_widths.maximum) * TOLERANCE_MARGIN) <= 0:
+                                # Add to the batch
+                                datetime_current_timestamp = self.current_simulation_timestamp.to_datetime()
+                                instrument_state.positive_sensing_batch.append({
+                                    "et": self.current_simulation_timestamp_et,
+                                    "timestamp_utc": datetime_current_timestamp,
+                                    "distance": distance,
+                                    "boresight": projection.projection.tolist(),
+                                    "meta": {
+                                        "astropy_offset": (self.current_simulation_timestamp - Time(datetime_current_timestamp, scale="utc")).sec,
+                                        "satellite_position": spacecraft_position.tolist(),
+                                        "filter_name": self.filter.name,
+                                        "fov_width": instrument_state.fov_widths.maximum,
+                                        "height": instrument_state.heights.maximum,
+                                    }
+                                })
+                                instrument_state.total_success += 1
+                            # If projection is outside of the FOV, we can prolong the step to skip large lunar swaths of no interest
+                            # With computed satellite speed and distance needed to reach the closest treshold (we use lower bound, so just fov width and hard treshold is used)
+                            else:
+                                distances_to_tresholds.append(distance)
+
+                        except Exception as e:
+                            # We have an error, possibly global in spice, so let's not sabotage the whole sim.
+                            logging.warning(f"Error calculating projection ({instrument.name}): {e}")
+                            datetime_current_timestamp = self.current_simulation_timestamp.to_datetime()
+                            instrument_state.failed_computation_batch.append({
+                                "et": self.current_simulation_timestamp_et,
+                                "timestamp_utc": datetime_current_timestamp,
+                                "error": str(e),
+                                "meta": {
+                                    "astropy_offset": (self.current_simulation_timestamp - Time(datetime_current_timestamp, scale="utc")).sec,
+                                    "satellite_position": spacecraft_position.tolist(),
+                                    "filter_name": self.filter.name,
+                                }
+                            })
+                            instrument_state.total_failed += 1
+                            continue
+
+
+                        # In case it's required by "timer", recalculate the FOV size and height
+                        instrument_state.heights_counter, instrument_state.fov_widths_counter = instrument_state.heights_counter - 1, instrument_state.fov_widths_counter - 1
+                        if instrument_state.heights_counter == 0:
+                            instrument_state.heights.add(np.linalg.norm(projection.spacecraft_relative))
+                            instrument_state.heights_counter = DYNAMIC_MAX_BUFFER_HEIGHT_UPDATE_RATE
+                        if instrument_state.fov_widths_counter == 0:
+                            instrument_state.fov_widths.add(instrument.recalculate_bounds_to_boresight_distance(self.current_simulation_timestamp_et))
+                            instrument_state.fov_widths_counter = DYNAMIC_MAX_BUFFER_FOV_WIDTH_UPDATE_RATE
+
+                    # If we have a distance to tresholds, we can use it to prolong the step
+                    if len(distances_to_tresholds) > 0:
+                        self._computation_timedelta = max(SIMULATION_STEP, min(distances_to_tresholds) / max_speed.maximum)
+                    else:
+                        self._computation_timedelta = SIMULATION_STEP
+
+                except Exception as e:
+                    logging.error(f"Error during simulation step: {e}")
+
+
+                finally:
+                    # Periodically dump the state of simulation
+                    if time.time() - real_time > SIM_STATE_DUMP_INTERVAL:
+                        state_string_prefix = "========== SIMULATION STATE REPORT ==========\n"
+                    
+                        block_lines = [state.dump_status_lines() for state in self.instrument_simulation_states.values()]
+                        transposed = zip(*block_lines)
+                    
+                        aligned_output = "\n".join("   ".join(f"{s:<16}" for s in line_parts) for line_parts in transposed)
+                        state_string = aligned_output + f"\n🚀  Locally max spacecraft speed: {max_speed.maximum:.2f} km/s\n"
+                    
+                        tqdm.write(state_string_prefix + state_string)
+                        real_time = time.time()
+
+                    # Simulation maintnance, have to be always executed!
+                    self._simulation_step()
+                    pbar.update(self.computation_timedelta.sec)
+
+                    for instrument in self.instruments:
+
+                        instrument_state: InstrumentSimulationState = self.instrument_simulation_states[instrument.name]
+                        if len(instrument_state.positive_sensing_batch) >= MONGO_PUSH_BATCH_SIZE:
+                            thread = Sessions.start_background_batch_insert(instrument_state.positive_sensing_batch, instrument_state.success_collections)
+                            threads.append(thread)
+                            instrument_state.positive_sensing_batch = []
+                            check_threads()
             
-                if len(failed_computation_batch) >= batchsize:
-                    Sessions.background_insert_batch_timeseries_results(failed_computation_batch, failed_collection)
-                    failed_computation_batch = []
-                    check_threads()
+                        if len(instrument_state.failed_computation_batch) >= MONGO_PUSH_BATCH_SIZE:
+                            thread = Sessions.start_background_batch_insert(instrument_state.failed_computation_batch, instrument_state.failed_collections)
+                            threads.append(thread)
+                            instrument_state.failed_computation_batch = []
+                            check_threads()
+
 
         # Since we want to kill all threads when the main thread exits, let's await them just to be sure!
         for thread in threads:

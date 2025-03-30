@@ -11,17 +11,12 @@ import time
 import threading
 import pandas as pd
 from pymongo import MongoClient, errors
-from src.config.mongo_config import (
+from src.db.config import (
     MONGO_URI,
     PIT_ATLAS_PARSED_DB_NAME,
     PIT_COLLECTION_NAME,
     SIMULATION_DB_NAME,
-    SIMULATION_POINTS_COLLECTION,
-    RDR_DIVINER_DB,
-    RDR_DIVINER_COLLECTION,
 )
-
-
 
 
 class Sessions:
@@ -87,67 +82,13 @@ class Sessions:
         return Sessions.lunar_pit_locations
 
     @staticmethod
-    def _prepare_simulation_collections(instrument_name: str, filter_str: str):
+    def prepare_simulation_collections(instrument_name: str, succesfull_indices: List[str] = ["et"]):
         """
         Create collection to store positive and failed simulation steps results
         """
-        session = Sessions.get_db_session('spacecraft-simulation')
-        positive_collection_name = f"{instrument_name}_{filter_str}"
-        failed_collection_name = f"{instrument_name}_{filter_str}_failed"
-
-        if positive_collection_name not in session.list_collection_names():
-            try:
-                session.create_collection(
-                    positive_collection_name,
-                    timeseries={
-                        "timeField": "timestamp_utc",  # Ephemeris time as float
-                        "metaField": "meta",  # Optional metadata
-                        "granularity": "seconds"  # Adjust based on data density
-                    }
-                )
-            except errors.CollectionInvalid:
-                pass  # Collection already exists
-
-        positive_collection = session[positive_collection_name]
-
-        # Ensure proper indexes exist for efficient querying
-        positive_collection.create_index("et")  # Queries by time range
-        positive_collection.create_index("min_distance")  # Sorting by distance
-        # collection.create_index([("boresight", "2dsphere")])  # Spatial index for boresight queries
-
-        if failed_collection_name not in session.list_collection_names():
-            try:
-                session.create_collection(
-                    failed_collection_name,
-                    timeseries={
-                        "timeField": "timestamp_utc",  # Ephemeris time as float
-                        "metaField": "meta",  # Optional metadata
-                        "granularity": "seconds"  # Adjust based on data density
-                    }
-                )
-            except errors.CollectionInvalid:
-                pass
-
-        failed_collection = session[failed_collection_name]
-
-        # Ensure proper indexes exist for efficient querying
-        failed_collection.create_index("et")  # Queries by time range
-
-        return positive_collection, failed_collection
-
-    @staticmethod
-    def get_simulation_collection(collection_name):
-        session = Sessions.get_db_session('spacecraft-simulation')
-        return session[collection_name]
-
-    @staticmethod
-    def _prepare_data_fetching_collections(dataset_name: str, treshold: float, succesfull_indices: List[str] = ["et"]):
-        """
-        Create collection to store positive and failed simulation steps results
-        """
-        session = Sessions.get_db_session('raw-data-fetching')
-        positive_collection_name = f"{dataset_name}_{int(treshold)}"
-        failed_collection_name = f"{dataset_name}_{int(treshold)}_failed"
+        session = Sessions.get_db_session(SIMULATION_DB_NAME)
+        positive_collection_name = f"{instrument_name}"
+        failed_collection_name = f"{instrument_name}_failed"
 
         if positive_collection_name not in session.list_collection_names():
             try:
@@ -191,9 +132,9 @@ class Sessions:
 
 
     @staticmethod
-    def background_insert_batch_timeseries_results(results: List[dict], collection):
+    def start_background_batch_insert(results: List[dict], collection):
         """
-        Inserts a batch of simulation result documents into MongoDB.
+        Spawns a background thread to insert a batch of simulation results into MongoDB.
         """
         if not results:
             return
@@ -218,7 +159,7 @@ class Sessions:
                 collection.insert_many(results, ordered=False)  # Insert in bulk, unordered (faster)
                 return  # Success, exit function
             except errors.PyMongoError as e:
-                if attempt <= Sessions.max_retries - 1:
+                if attempt >= Sessions.max_retries - 1:
                     raise e
                 wait_time *= 1.2
                 time.sleep(wait_time)

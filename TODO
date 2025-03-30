@@ -17,3 +17,10 @@
  - Add identification that GRAIL data were obtained/processed with nav/science data
  - TQDM refresh rate
  - Kernel manager debug
+
+
+
+
+
+ Optimization
+  - Transformation matrices stored and cached within instrument class

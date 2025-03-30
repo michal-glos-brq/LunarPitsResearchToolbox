@@ -1,14 +1,13 @@
 """This file defines classes used to filter out projected points on the lunar surface"""
 
 import logging
-from functools import partial
 from abc import ABC, abstractmethod
 
 import numpy as np
 import spiceypy as spice
 from scipy.spatial import cKDTree
 
-from src.db.mongo.interface import Sessions
+from src.db.interface import Sessions
 from src.global_config import LUNAR_RADIUS
 
 logger = logging.getLogger(__name__)
@@ -16,8 +15,15 @@ logger = logging.getLogger(__name__)
 
 class BaseFilter(ABC):
 
-    @abstractmethod
+    _hard_radius = 0.0
+
     @property
+    def hard_radius(self) -> float:
+        # How far from out area or point of interest are we capturing the data
+        return self._hard_radius
+
+    @property
+    @abstractmethod
     def name(self) -> str:
         pass
 
@@ -34,7 +40,7 @@ class PointFilter(BaseFilter):
         hard_radius - radius around the point we want to caputure. Hard in the sense that no points within this treshold would be filtered out
         """
         self.dsk_filename = dsk_filename
-        self.hard_radius = hard_radius
+        self._hard_radius = hard_radius
         self._load_target_points(dsk_filename)
 
     @property
@@ -80,7 +86,7 @@ class PointFilter(BaseFilter):
         self.kd_tree = cKDTree(self._target_points)
 
 
-class AreaFilters(BaseFilter):
+class AreaFilter(BaseFilter):
     """This filter is used to filter out points that are not within a certain area on the lunar surface"""
 
     def __init__(self, min_lat: float, max_lat: float, min_lon: float, max_lon: float):
@@ -135,3 +141,17 @@ class AreaFilters(BaseFilter):
 
         # Compute final straight-line (Cartesian-like) distance
         return np.sqrt(lat_dist**2 + lon_dist_scaled**2) * (np.pi * LUNAR_RADIUS / 180)
+
+
+class CompositeFilter(BaseFilter):
+    """This filter is used to combine multiple filters"""
+
+    def __init__(self, filters: list[BaseFilter]):
+        self.filters = filters
+
+    @property
+    def name(self) -> str:
+        return f"CompositeFilter_{'_'.join([f.name for f in self.filters])}"
+
+    def rank_point(self, point: np.array) -> float:
+        return min([f.rank_point(point) for f in self.filters])

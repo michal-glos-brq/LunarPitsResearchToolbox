@@ -44,6 +44,11 @@ class SubInstrument:
         matrix = self.transform_frame(frame, et)
         return np.array([spice.mxv(matrix, point) for point in self.bounds])
 
+    def transform_vector(self, frame: str, vector: np.array, et: float = 0):
+        """Transforms vector to the given frame"""
+        matrix = self.transform_frame(frame, et)
+        return spice.mxv(matrix, vector)
+
     def transform_to_frame(self, frame: str, et: float = 0):
         """Transforms boresight and bounds to the given frame"""
         self.boresight = self.transformed_boresight(frame, et=et)

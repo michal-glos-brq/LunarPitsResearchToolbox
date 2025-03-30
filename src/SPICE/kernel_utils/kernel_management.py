@@ -46,7 +46,6 @@ from src.SPICE.kernel_utils.detailed_model import DetailedModelDSKKernel
 
 
 
-
 class BaseKernelManager(ABC):
     """
     This SweepIterator ensures we have correct SPICE files loaded for given datetime
@@ -120,6 +119,7 @@ class LunarKernelManager(BaseKernelManager):
         You can choose the lunar frame with frame and DSK model - more detailed have to be compiled locally
         """
         super().__init__()
+        self.main_reference_frame = frame
         # Following two kernels are universal and always needed
         self.static_kernels["bpck"].append(
             BaseKernel(generic_url("pck/moon_pa_de421_1900-2050.bpc"), root_path("pck/moon_pa_de421_1900-2050.bpc"))
