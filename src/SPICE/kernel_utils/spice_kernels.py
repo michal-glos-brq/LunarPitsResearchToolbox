@@ -1,81 +1,78 @@
 """
 ====================================================
-SPICE Dynamic Kernel Management
+SPICE Kernel Management Module
 ====================================================
 
-Author: Michal Gloš
+Author: Michal Glos
 University: Brno University of Technology (VUT)
 Faculty: Faculty of Electrical Engineering and Communication (FEKT)
 Diploma Thesis Project
 
-Description:
-------------
-This module manages dynamic SPICE kernels, ensuring that the correct 
-kernels are loaded for the given simulation time. It handles:
+Overview:
+---------
+This module handles the downloading, caching, and timed management of SPICE kernels,
+supporting both static and dynamic (time-bounded) kernels for lunar remote sensing simulations.
 
-1. **Kernel Downloading**: Fetches SPICE kernels from remote repositories.
-2. **Kernel Caching**: Maintains an optimal number of loaded kernels.
-3. **Time-Based Kernel Switching**: Ensures that the correct CK kernels 
-   are active for the given simulation time.
-4. **Parallel Downloading**: Uses asyncio to efficiently download metadata 
-   and kernels when needed.
+Key Features:
+-------------
+1. **Download Management** – Robust sync/async downloading with retry logic and size checks.
+2. **Kernel Caching** – Automatic on-disk storage with cleanup support.
+3. **Time-Aware Loading** – Loads the appropriate kernel(s) for a given simulation timestamp.
+4. **Metadata Parsing** – Extracts time intervals from `.LBL` metadata for dynamic kernels.
+5. **Concurrent Operations** – Uses asyncio for parallel downloads and metadata processing.
 
-Components:
------------
-- **BaseKernel**: Handles static SPICE kernels with basic download and caching.
-- **AutoUpdateKernel**: Automatically selects the latest available kernel.
-- **LBLDynamicKernel**: Parses `.lbl` metadata files to determine valid time intervals.
-- **LBLDynamicKernelLoader**: Loads, manages, and switches dynamic kernels as needed.
-- **PriorityKernelManagement**: Prioritizes different sources of kernels.
+Structure:
+----------
+- **BaseKernel** – Common functionality for downloading, checking, loading, and unloading kernels.
+- **AutoUpdateKernel** – Selects the latest matching kernel from a remote folder.
+- **LBLKernel** – Extends `BaseKernel` with support for an adjacent `.LBL` metadata file.
+- **TimeBoundKernel** – Mixin class providing a time interval interface (`in_interval()`).
+- **LBLDynamicKernel** – Combines LBL and time-bounded behavior; interval is parsed from metadata.
+- **DynamicKernel** – Predefined time-bounded kernel with known interval.
+- **StaticKernelLoader** – Downloads and loads static kernels (e.g., FK, IK).
+- **DynamicKernelManager** – Manages a series of time-ordered dynamic kernels.
+- **LBLDynamicKernelLoader** – Dynamic manager specialized for `.LBL`-based kernels.
+- **LROCDynamicKernelLoader** – Extracts intervals from LROC kernel filenames.
+- **KernelPriorityManager** – Manages fallback across multiple kernel managers.
 """
-
 
 import os
 import logging
 import random
-import sys
 import re
 import requests
 import time
 import asyncio
 import aiohttp
 import aiofiles
+from abc import ABC, abstractmethod
 from collections import OrderedDict
 from urllib.parse import urljoin
-from typing import Optional, List, Tuple, Callable, Iterable, Dict
+from typing import Optional, List, Dict, Sequence
 
-from astropy.time import Time, TimeDelta
+from astropy.time import Time
 import spiceypy as spice
 from tqdm.asyncio import tqdm
 from bs4 import BeautifulSoup as bs
 
-sys.path.insert(0, "/".join(__file__.split("/")[:-3]))
-
 from src.global_config import TQDM_NCOLS
-from src.SPICE.config import MAX_LOADED_DYNAMIC_KERNELS, MAX_KERNEL_DOWNLOADS
+from src.SPICE.config import (
+    MAX_LOADED_DYNAMIC_KERNELS,
+    MAX_KERNEL_DOWNLOADS,
+    HEADERS,
+    MAX_RETRIES,
+    SPICE_CHUNK_SIZE,
+    SPICE_READ_TIMEOUT,
+    SPICE_TOTAL_TIMEOUT,
+    KERNEL_TIME_KEYS,
+)
 
 logger = logging.getLogger(__name__)
-
-# Default keys to be used to read .lbl files adjecent to spice kernels
-KERNEL_TIME_KEYS = {"filename_key": "^SPICE_KERNEL", "time_start_key": "START_TIME", "time_stop_key": "STOP_TIME"}
-SECOND_TIMEDELTA = TimeDelta(1, format="sec")
-MAX_RETRIES = 250
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-    "Accept": "*/*",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-}
 
 #####################################################################################################################
 #####                                            Single kernel utils                                            #####
 #####################################################################################################################
 
-def get_aiohttp_session():
-    return aiohttp.ClientSession(
-        timeout=aiohttp.ClientTimeout(total=60, connect=10, sock_connect=10, sock_read=60),
-        headers=HEADERS
-    )
 
 class BaseKernel:
     """Base implementation of SPICE kernel"""
@@ -83,204 +80,226 @@ class BaseKernel:
     url: str
     filename: str
 
-    def __init__(self, url: str, filename: str) -> None:
+    def __init__(self, url: str, filename: str, keep_kernel: bool = True) -> None:
+        self._loaded = False
         self.url = url
         self.filename = filename
+        self._keep_kernel = keep_kernel
         os.makedirs(os.path.dirname(self.filename), exist_ok=True)
 
     @property
     def file_exists(self) -> bool:
-        """Check if the file exists on disk"""
+        """Check if the local kernel file exists"""
         return os.path.exists(self.filename)
 
-    def download_kernel(self) -> None:
-        """Download the kernel from the internet"""
+    def ensure_downloaded(self) -> None:
+        """Make sure the kernel is downloaded"""
         if not self.file_exists:
             self._download_file(self.url, self.filename)
 
-    async def async_download_kernel(self) -> None:
+    async def async_ensure_downloaded(self) -> None:
         """Asynchronously download the kernel with a progress bar update"""
         if not self.file_exists:
             await self._async_download_file(self.url, self.filename)
 
     def unload(self) -> None:
         """Unload the kernel from spiceypy"""
-        spice.unload(self.filename)
+        if self._loaded:
+            spice.unload(self.filename)
+            self._loaded = False
+            logger.debug("Unloaded kernel %s", self.filename)
+        else:
+            logger.debug("Attempted to unload non-loaded kernel %s.", self.filename)
+        if not self._keep_kernel:
+            self.delete_file()
 
-    # def load(self, load_callbacks: List[Tuple[Callable, Iterable, Dict]] = []) -> None:
     def load(self) -> None:
-        """Load the kernel to spiceypy"""
-        self.download_kernel()
-        # This makes sure kernel is loaded correctly. Could fail once, if it throws error for the second time
-        # there is something wrong with the system 
-        # try:
-        #     for callback, args, kwargs in load_callbacks:
-        #         callback(*args, **kwargs)
-        # except Exception as e:
-        #     for callback, args, kwargs in load_callbacks:
-        #         callback(*args, **kwargs)
-        spice.furnsh(self.filename)
+        """Ensure the kernel is downloaded and load it into spiceypy."""
+        if not self._loaded:
+            self.ensure_downloaded()
+            spice.furnsh(self.filename)
+            self._loaded = True
+            logger.debug("Loaded kernel %s", self.filename)
+        else:
+            logger.debug("Kernel %s is already loaded", self.filename)
 
     def delete_file(self) -> None:
         """Delete the file from disk"""
-        os.remove(self.filename)
+        if self.file_exists:
+            os.remove(self.filename)
+            logger.debug("Deleted kernel file %s", self.filename)
+        else:
+            logger.debug("Attempted to delete non-existing kernel file %s", self.filename)
 
-    def _download_file(self, url, filename) -> None:
+    def _verify_file_size(self, path: str, expected: Optional[int]) -> None:
+        if expected is None:
+            return
+        actual = os.path.getsize(path)
+        if actual != expected:
+            raise ValueError(f"Size mismatch: expected {expected} bytes, got {actual} bytes")
+
+    def _verify_file_size(self, path: str, expected: Optional[int]) -> None:
+        """Check that the file at 'path' has the expected size."""
+        if expected is None:
+            return
+        actual = os.path.getsize(path)
+        if actual != expected:
+            raise ValueError(f"Size mismatch: expected {expected} bytes, got {actual} bytes")
+
+    def _download_file(self, url: str, filename: str) -> None:
         """
-        Download the file from the internet with retries and a total timeout of 1 hour.
-        If the download fails after all retries, delete the file.
+        Synchronously download the file with retries.
+        Includes file size verification using expected Content-Length.
         """
-        timeout = 60  # Total timeout in seconds
         retries = 0
-        tmp_filename = filename + ".tmp"
-
+        temp_path = filename + ".tmp"
         headers = {"User-Agent": "Mozilla/5.0 (compatible; MyDownloader/1.0)"}
 
         while retries < MAX_RETRIES:
             try:
-                with requests.get(url, stream=True, timeout=timeout, headers=headers) as r:
+                with requests.get(url, stream=True, timeout=SPICE_TOTAL_TIMEOUT, headers=headers) as r:
                     r.raise_for_status()
                     expected_size = r.headers.get("Content-Length")
                     expected_size = int(expected_size) if expected_size and expected_size.isdigit() else None
 
-                    with open(tmp_filename, "wb") as f:
-                        for chunk in r.iter_content(chunk_size=8192, timeout=timeout):
+                    with open(temp_path, "wb") as f:
+                        for chunk in r.iter_content(chunk_size=SPICE_CHUNK_SIZE):
                             if chunk:  # filter out keep-alive chunks
                                 f.write(chunk)
 
-                # Verify file size if available from headers
-                actual_size = os.path.getsize(tmp_filename)
-                if expected_size is not None and actual_size != expected_size:
-                    raise ValueError(f"Size mismatch: expected {expected_size} bytes, got {actual_size} bytes")
+                # Verify the file size
+                self._verify_file_size(temp_path, expected_size)
 
-                # Rename temp file to final filename after success
-                os.rename(tmp_filename, filename)
+                os.rename(temp_path, filename)
                 logger.debug("Successfully downloaded %s", url)
                 return
 
             except Exception as e:
                 retries += 1
-                logger.warning("Attempt %s failed to download %s: %s", retries, url, e)
-                # Add exponential backoff with jitter to avoid hammering the server
-                sleep_time = max((2 ** retries) + (random.random() * retries), 120)
+                logger.warning("Attempt %d failed to download %s: %s", retries, url, e)
+                sleep_time = max((2**retries), 120) + (random.random() * retries)
                 if retries < MAX_RETRIES:
                     time.sleep(sleep_time)
                 else:
-                    if os.path.exists(tmp_filename):
-                        os.remove(tmp_filename)
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
                     logger.error("Failed to download %s after %s attempts", url, MAX_RETRIES)
                     return
 
-
-    def _parse_total_size(self, response):
+    async def _async_download_file(self, url: str, filename: str) -> None:
         """
-        If the server supports resume, it should return a Content-Range header of the form:
-           "bytes start-end/total"
-        """
-        cr = response.headers.get("Content-Range")
-        if cr:
-            try:
-                return int(cr.split("/")[-1])
-            except Exception:
-                return None
-        # Fallback: use Content-Length (for full downloads)
-        cl = response.headers.get("Content-Length")
-        return int(cl) if cl and cl.isdigit() else None
-
-    async def _async_download_file(self, url, filename) -> None:
-        """
-        Asynchronously download the file with retries and per-chunk timeouts.
-        If a temporary file exists, resume the download from where it left off.
-        Each attempt uses a new ClientSession that is closed automatically.
-        If the download fails after max retries, the temporary file is deleted.
+        Asynchronously download the file with retries.
+        Resumes download if a temporary file exists and verifies the final file size.
         """
         retries = 0
-        tmp_filename = filename + ".tmp"
+        temp_path = filename + ".tmp"
 
         while retries < MAX_RETRIES:
             try:
-                # Check for resume position.
-                resume_pos = os.path.getsize(tmp_filename) if os.path.exists(tmp_filename) else 0
+                resume_pos = os.path.getsize(temp_path) if os.path.exists(temp_path) else 0
                 headers = {}
                 if resume_pos:
                     headers["Range"] = f"bytes={resume_pos}-"
 
-                # Create a new session that will close automatically.
-                async with get_aiohttp_session() as session:
-                    async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=60)) as response:
+                async with aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=SPICE_TOTAL_TIMEOUT, connect=10, sock_connect=10, sock_read=60),
+                    headers=HEADERS,
+                ) as session:
+                    async with session.get(
+                        url, headers=headers, timeout=aiohttp.ClientTimeout(total=SPICE_TOTAL_TIMEOUT)
+                    ) as response:
                         if response.status == 416:
-                            if os.path.exists(tmp_filename):
-                                os.remove(tmp_filename)
+                            if os.path.exists(temp_path):
+                                os.remove(temp_path)
                         response.raise_for_status()
 
-                        # Determine the total expected size.
+                        # Determine total expected size.
+                        total_size = None
                         if resume_pos:
-                            total_size = self._parse_total_size(response)
-                            # If no Content-Range is returned, assume resume not supported.
+                            cr = response.headers.get("Content-Range")
+                            if cr and "/" in cr:
+                                try:
+                                    total_size = int(cr.split("/")[-1])
+                                except ValueError:
+                                    total_size = None
+                            else:
+                                cl = response.headers.get("Content-Length")
+                                total_size = int(cl) if cl and cl.isdigit() else None
                             if total_size is None:
-                                logger.warning("Server did not return Content-Range; cannot resume. Restarting download.")
+                                logger.warning(
+                                    "Server did not return Content-Range; cannot resume. Restarting download."
+                                )
                                 resume_pos = 0
-                                total_size = int(response.headers.get("Content-Length")) if response.headers.get("Content-Length", "").isdigit() else None
+                                cl = response.headers.get("Content-Length")
+                                total_size = int(cl) if cl and cl.isdigit() else None
                         else:
-                            total_size = int(response.headers.get("Content-Length")) if response.headers.get("Content-Length", "").isdigit() else None
+                            cl = response.headers.get("Content-Length")
+                            total_size = int(cl) if cl and cl.isdigit() else None
 
                         mode = "ab" if resume_pos else "wb"
-                        async with aiofiles.open(tmp_filename, mode) as f:
+                        async with aiofiles.open(temp_path, mode) as f:
                             while True:
                                 try:
-                                    # Read up to 8192 bytes with a per-read timeout (15 seconds)
-                                    chunk = await asyncio.wait_for(response.content.read(8192), timeout=15)
+                                    chunk = await asyncio.wait_for(
+                                        response.content.read(SPICE_CHUNK_SIZE), timeout=SPICE_READ_TIMEOUT
+                                    )
                                 except asyncio.TimeoutError:
                                     raise Exception("Stalled during chunk read")
                                 if not chunk:
                                     break
                                 await f.write(chunk)
 
-                # Verify file size if known.
-                actual_size = os.path.getsize(tmp_filename)
+                # Verify the file size
+                actual_size = os.path.getsize(temp_path)
                 if total_size is not None and actual_size != total_size:
                     raise ValueError(f"Size mismatch: expected {total_size} bytes, got {actual_size} bytes")
 
-                os.rename(tmp_filename, filename)
+                os.rename(temp_path, filename)
                 logger.debug("Successfully downloaded %s", url)
                 return
 
             except Exception as e:
                 retries += 1
-                # This is expected, for now will be left on debug level.
-                logger.debug("Attempt %s failed to download %s: %s", retries, url, e)
-                # Capped exponential backoff (max 120 seconds)
-                sleep_time = min((2 ** retries) + (random.random() * retries), 120)
+                logger.debug("Attempt %d failed to download %s: %s", retries, url, e)
+                sleep_time = max((2**retries), 120) + (random.random() * retries)
                 if retries < MAX_RETRIES:
                     await asyncio.sleep(sleep_time)
                 else:
-                    if os.path.exists(tmp_filename):
-                        os.remove(tmp_filename)
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
                     logger.error("Failed to download %s after %s attempts", url, MAX_RETRIES)
                     return
 
+    def __repr__(self):
+        return f"<BaseKernel filename='{self.filename}'>"
+
 
 class AutoUpdateKernel(BaseKernel):
+    """Kernel that automatically picks the newest file from a remote folder, based on kernel name, assuming datetime is present."""
 
     url: str
     filename: str
 
-    def __init__(self, folder_url: str, folder_path: str, regex: str):
+    def __init__(self, folder_url: str, folder_path: str, regex: str, keep_kernel: bool = True):
         self.regex = re.compile(regex)
         response = requests.get(folder_url)
         response.raise_for_status()
         soup = bs(response.text, "html.parser")
         links = soup.find_all("a")
-        filename = sorted([link.get("href") for link in links if self.regex.search(link.get("href") or "")], reverse=True)[0]
+        matches = [link.get("href") for link in links if self.regex.search(link.get("href") or "")]
+        if not matches:
+            raise ValueError(f"No matching kernel found in {folder_url} with regex {regex}")
+        filename = sorted(matches, reverse=True)[0]
         url = urljoin(folder_url, filename)
-        super().__init__(url, os.path.join(folder_path, filename))
-        
+        super().__init__(url, os.path.join(folder_path, filename), keep_kernel=keep_kernel)
 
 
 class LBLKernel(BaseKernel):
-    
-    def __init__(self, url: str, filename: str, metadata_url: str, metadata_filename: str) -> None:
-        super().__init__(url, filename)
+
+    def __init__(
+        self, url: str, filename: str, metadata_url: str, metadata_filename: str, keep_kernel: bool = True
+    ) -> None:
+        BaseKernel.__init__(self, url, filename, keep_kernel=keep_kernel)
         self.metadata_url = metadata_url
         self.metadata_filename = metadata_filename
 
@@ -292,19 +311,29 @@ class LBLKernel(BaseKernel):
     def download_metadata(self) -> None:
         """Download the metadata file from the internet"""
         if not self.metadata_exists:
+            logger.debug("Downloading metadata: %s", self.metadata_filename)
             self._download_file(self.metadata_url, self.metadata_filename)
+        else:
+            logger.debug("Metadata already exists: %s", self.metadata_filename)
 
     async def async_download_metadata(self) -> None:
         """Asynchronously download the metadata with a progress bar update"""
         if not self.metadata_exists:
+            logger.debug("Downloading metadata: %s", self.metadata_filename)
             await self._async_download_file(self.metadata_url, self.metadata_filename)
+        else:
+            logger.debug("Metadata already exists: %s", self.metadata_filename)
 
     def delete_metadata(self) -> None:
-        """Delete the metadata file from disk"""
-        os.remove(self.metadata_filename)
+        if os.path.exists(self.metadata_filename):
+            os.remove(self.metadata_filename)
+            logger.debug("Deleted metadata %s", self.metadata_filename)
+        else:
+            logger.debug("Attempted to delete non-existing metadata %s", self.metadata_filename)
 
 
-class StaticKernelManager:
+class StaticKernelLoader:
+    """Downloads and loads a static group of SPICE kernels from disk or remote."""
 
     def __init__(self, kernel_objects: OrderedDict[str, List[BaseKernel]]):
         # We want to aggregate all kernels in one list while retaining its order
@@ -314,7 +343,7 @@ class StaticKernelManager:
 
         async def download_kernel(kernel: BaseKernel, pbar: tqdm) -> None:
             async with semaphore:
-                await kernel.async_download_kernel()
+                await kernel.async_ensure_downloaded()
                 pbar.update(1)
 
         pbar = tqdm(total=len(self.kernel_pool), desc="Downloading static kernels", ncols=TQDM_NCOLS)
@@ -324,10 +353,16 @@ class StaticKernelManager:
         pbar.close()
 
     def load(self):
+        logger.debug("Loading %d static kernels...", len(self.kernel_pool))
+        if not self.kernel_pool:
+            logger.warning("No kernels to load.")
         for kernel in self.kernel_pool:
             kernel.load()
 
     def unload(self):
+        logger.debug("Unloading %d static kernels...", len(self.kernel_pool))
+        if not self.kernel_pool:
+            logger.warning("No kernels to unload.")
         for kernel in self.kernel_pool:
             kernel.unload()
 
@@ -337,35 +372,75 @@ class StaticKernelManager:
 #####################################################################################################################
 
 
-class LBLDynamicKernel(LBLKernel):
+class TimeBoundKernel(BaseKernel):
     """
-    Class representing a single SPICE kernel file, which also has .lbl metadata files
+    Kernel with a defined valid time interval.
+
+    Used as a base for kernels that are only applicable within a specific time range.
+    Is inten
     """
 
-    metadata_url: str
-    metadata_filename: str
     time_start: Optional[Time]
     time_stop: Optional[Time]
 
-    def __init__(self, url: str, filename: str, metadata_url: str, metadata_filename: str) -> None:
-        super().__init__(url, filename, metadata_url, metadata_filename)
-        self.time_start = None
-        self.time_stop = None
+    def __init__(
+        self, url: str, filename: str, time_start: Optional[Time], time_stop: Optional[Time], keep_kernel: bool = True
+    ):
+        """
+        Initialize a time-bounded kernel.
+
+        Parameters:
+        - url: Remote URL of the kernel file.
+        - filename: Local path where the kernel should be saved.
+        - time_start: Start of the valid time interval.
+        - time_stop: End of the valid time interval.
+        """
+        super().__init__(url, filename, keep_kernel=keep_kernel)
+        self.time_start = time_start
+        self.time_stop = time_stop
 
     def in_interval(self, time: Time) -> bool:
         """
-        Check if the given time is within the time interval of the kernel
+        Check if a given time is within this kernel's valid interval. Fails if start and stop times not set
+
+        Parameters:
+        - time: Time to check.
+
+        Returns:
+        - True if time is within interval, False otherwise.
         """
         return self.time_start <= time <= self.time_stop
 
-    async def get_time_interval(self, semaphore, pbar: tqdm) -> None:
+
+class LBLDynamicKernel(LBLKernel, TimeBoundKernel):
+    """
+    Dynamic kernel with .LBL metadata file specifying time interval.
+    """
+
+    def __init__(self, url, filename, metadata_url, metadata_filename, keep_kernel: bool = True):
         """
-        Get the time interval from the metadata file
+        Initialize an LBL-based dynamic kernel.
 
-        Is async so it could be gathered with asyncio
+        Parameters:
+        - url: Kernel file URL.
+        - filename: Local kernel file path.
+        - metadata_url: Metadata (.LBL) file URL.
+        - metadata_filename: Local metadata file path.
+        """
+        LBLKernel.__init__(self, url, filename, metadata_url, metadata_filename, keep_kernel=keep_kernel)
+        self.time_start = None
+        self.time_stop = None
 
-        semaphore: asyncio.Semaphore to limit the number of concurrent downloads
-        pbar: tqdm.asyncio.tqdm, goes up 1 per file
+    async def get_time_interval(self, semaphore, pbar: tqdm) -> bool:
+        """
+        Download and parse the .LBL metadata to extract the kernel's valid time interval.
+
+        Parameters:
+        - semaphore: Limits concurrent metadata downloads.
+        - pbar: Progress bar to update after completion.
+
+        Returns:
+        - True if time interval was successfully parsed, False otherwise.
         """
         async with semaphore:
             await self.async_download_metadata()
@@ -373,41 +448,53 @@ class LBLDynamicKernel(LBLKernel):
         pattern = re.compile(r"(\S+)\s*=\s*(.+)")
         with open(self.metadata_filename, "r") as f:
             content = f.read()
+
         metadata = {m.group(1): m.group(2).strip('"') for m in pattern.finditer(content)}
         if not all(key in metadata for key in KERNEL_TIME_KEYS.values()):
             logger.warning("Skipping %s, insufficient data", self.metadata_filename)
-            return
+            return False
+
         self.time_start = Time(metadata[KERNEL_TIME_KEYS["time_start_key"]], format="isot", scale="utc")
         self.time_stop = Time(metadata[KERNEL_TIME_KEYS["time_stop_key"]], format="isot", scale="utc")
         if pbar:
             pbar.update(1)
+        return True
 
 
-class DynamicKernel(BaseKernel):
+class DynamicKernel(TimeBoundKernel):
+    """
+    Simple time-bounded kernel initialized with pre-known interval.
+    """
 
-    def __init__(self, url: str, filename: str, time_start: Time, time_stop: Time) -> None:
-        super().__init__(url, filename)
-        self.time_start = time_start
-        self.time_stop = time_stop
-
-    def in_interval(self, time: Time) -> bool:
+    def __init__(self, url: str, filename: str, time_start: Time, time_stop: Time, keep_kernel: bool = True):
         """
-        Check if the given time is within the time interval of the kernel
+        Initialize a kernel with known time interval.
+
+        Parameters:
+        - url: Remote kernel file URL.
+        - filename: Local storage path.
+        - time_start: Start of the valid time interval.
+        - time_stop: End of the valid time interval.
         """
-        return self.time_start <= time <= self.time_stop
+        super().__init__(url, filename, time_start, time_stop, keep_kernel=keep_kernel)
 
 
-class DynamicKernelManager:
+class DynamicKernelManager(ABC):
 
     @property
     def min_loaded_time(self) -> Time:
+        if not self.kernel_pool:
+            return None
         return self.kernel_pool[0].time_start
 
     @property
     def max_loaded_time(self) -> Time:
+        if not self.kernel_pool:
+            return None
         return self.kernel_pool[-1].time_stop
 
-    def get_kernel_pool_kwargs(self, filename, url) -> Dict:
+    @abstractmethod
+    def parse_kernel_time_bounds(self, filename, url) -> Dict:
         """
         Get the kernel pool kwargs for the given filename and url
         """
@@ -418,26 +505,27 @@ class DynamicKernelManager:
         path: str,
         base_url: str,
         regex: str,
-        files_persist: bool = True,
+        keep_kernels: bool = True,
         pre_download_kernels: bool = True,
-        # load_callbacks: List[Tuple[Callable, Iterable, Dict]] = [],
+        min_time_to_load: Optional[Time] = None,
+        max_time_to_load: Optional[Time] = None,
     ):
         """
         path: local path to dynamic kernel folder
         base_url: remote location of dynamic kernels
         regex: filter all files from local path to get desired kernels
-        files_persist: if True, downloaded files are stored on disk. If false, once data are unloaded,
+        keep_kernels: if True, downloaded files are stored on disk. If false, once data are unloaded,
                     corresponding files are deleted
         pre_download_kernels: if True, all kernels are downloaded at initialization (if not already on the disk)
-        load_callbakcs: list of tuples with callback functions, their arguments and keyword arguments. Checks for correct
-            loading of kernels. Could throw exception once to load it properly, throwing 2 means something went wrong.
-            First element of the iterable is reserved for et (placeholder is needed when defining the callbacks)
-            (commented out for now, but in case it would be needed, uncommenting the code will bring it back to life)
+        min_time_to_load: minimum time to load the kernel, ditch kernels with max_time lower then this value
+        max_time_to_load: maximum time to load the kernel, ditch kernels with min_time higher then this value
         """
         self.regex = re.compile(regex)
         self.base_url = base_url
-        self.files_persist = files_persist
+        self.keep_kernels = keep_kernels
         self.path = path
+        self.min_time_to_load = min_time_to_load
+        self.max_time_to_load = max_time_to_load
         # self.load_callbacks = load_callbacks
         os.makedirs(self.path, exist_ok=True)
 
@@ -448,6 +536,15 @@ class DynamicKernelManager:
         if pre_download_kernels:
             self.download_kernels()
 
+    def apply_time_interval_kernel_filter(self) -> None:
+        """
+        Filters the kernel pool based on the min_time_to_load and max_time_to_load
+        It is inclusive, it's enough to be partially relevant
+        """
+        if self.min_time_to_load:
+            self.kernel_pool = [kernel for kernel in self.kernel_pool if kernel.time_stop >= self.min_time_to_load]
+        if self.max_time_to_load:
+            self.kernel_pool = [kernel for kernel in self.kernel_pool if kernel.time_start <= self.max_time_to_load]
 
     def load_metadata(self):
         response = requests.get(self.base_url)
@@ -461,12 +558,12 @@ class DynamicKernelManager:
             DynamicKernel(
                 kernel_url,
                 os.path.join(self.path, kernel_filename),
-                **self.get_kernel_pool_kwargs(kernel_filename, kernel_url)
+                keep_kernel=self.keep_kernels,
+                **self.parse_kernel_time_bounds(kernel_filename, kernel_url),
             )
-            for kernel_url, kernel_filename in zip(
-                kernel_urls, kernel_filenames
-            )
+            for kernel_url, kernel_filename in zip(kernel_urls, kernel_filenames)
         ]
+        self.apply_time_interval_kernel_filter()
         self.kernel_pool_len = len(self.kernel_pool)
         self.kernel_pool = sorted(self.kernel_pool, key=lambda x: x.time_start)
 
@@ -478,7 +575,7 @@ class DynamicKernelManager:
 
         async def download_kernel(kernel: LBLDynamicKernel, pbar: tqdm) -> None:
             async with semaphore:
-                await kernel.async_download_kernel()
+                await kernel.async_ensure_downloaded()
                 pbar.update(1)
 
         pbar = tqdm(total=len(self.kernel_pool), desc="Downloading dynamic kernels", ncols=TQDM_NCOLS)
@@ -495,19 +592,12 @@ class DynamicKernelManager:
         """
         kernel = self.kernel_pool[_id]
         self.active_kernel_id = _id
-
-        # for callback in self.load_callbacks:
-        #     callback[1][0] = spice.utc2et(time.utc.iso)
-        # kernel.load(load_callbacks=self.load_callbacks)
         kernel.load()
 
         self.loaded_kernels.append(kernel)
         if len(self.loaded_kernels) > MAX_LOADED_DYNAMIC_KERNELS:
-            spice.unload(self.loaded_kernels[0].filename)
-            if not self.files_persist:
-                self.loaded_kernels[0].delete_file()
-            self.loaded_kernels.pop(0)
-
+            kernel = self.loaded_kernels.pop(0)
+            kernel.unload()
 
     def reload_kernels(self, time: Time) -> bool:
         """
@@ -515,7 +605,9 @@ class DynamicKernelManager:
         """
         if self.loaded_kernels and self.loaded_kernels[-1].in_interval(time):
             return True
-        elif self.active_kernel_id < self.kernel_pool_len - 1 and self.kernel_pool[self.active_kernel_id + 1].in_interval(time):
+        elif self.active_kernel_id < self.kernel_pool_len - 1 and self.kernel_pool[
+            self.active_kernel_id + 1
+        ].in_interval(time):
             self.load_new_kernel(self.active_kernel_id + 1, time)
             return True
         else:
@@ -525,31 +617,16 @@ class DynamicKernelManager:
                     return True
         return False
 
-
     def unload(self) -> None:
         """
         Unload all loaded kernels
         """
         for kernel in self.loaded_kernels:
             spice.unload(kernel.filename)
-            if not self.files_persist:
-                kernel.delete_file()
         self.loaded_kernels = []
         self.active_kernel_id = -1
         self.kernel_pool = []
 
-class LROCDynamicKernelLoader(DynamicKernelManager):
-
-    def get_kernel_pool_kwargs(self, filename, url) -> Dict:
-        match = re.search(r"lrolc_(\d{7})_(\d{7})", filename)
-        if not match:
-            raise ValueError(f"Filename does not match expected pattern: {filename}")
-    
-        start_doy, end_doy = match.groups()
-        start_doy, end_doy = start_doy[:4] + ":" + start_doy[4:], end_doy[:4] + ":" + end_doy[4:]
-        t_start = Time(start_doy, format="yday", scale="utc")
-        t_end = Time(end_doy, format="yday", scale="utc")
-        return {"time_start": t_start, "time_stop": t_end}
 
 class LBLDynamicKernelLoader(DynamicKernelManager):
 
@@ -559,16 +636,17 @@ class LBLDynamicKernelLoader(DynamicKernelManager):
         base_url: str,
         regex: str,
         metadata_regex: str,
-        files_persist: bool = True,
+        keep_kernels: bool = True,
         pre_download_kernels: bool = True,
-        # load_callbacks: List[Tuple[Callable, Iterable, Dict]] = [],
+        min_time_to_load: Optional[Time] = None,
+        max_time_to_load: Optional[Time] = None,
     ):
         """
         path: local path to dynamic kernel folder
         base_url: remote location of dynamic kernels
         regex: filter all files from local path to get desired kernels
         metadata_regex: filter all files with metadata, implicitly .lbl files
-        files_persist: if True, downloaded files are stored on disk. If false, once data are unloaded,
+        keep_kernels: if True, downloaded files are stored on disk. If false, once data are unloaded,
                     corresponding files are deleted
         pre_download_kernels: if True, all kernels are downloaded at initialization (if not already on the disk)
         load_callbakcs: list of tuples with callback functions, their arguments and keyword arguments. Checks for correct
@@ -577,7 +655,13 @@ class LBLDynamicKernelLoader(DynamicKernelManager):
             (commented out for now, but in case it would be needed, uncommenting the code will bring it back to life)
         """
         self.metadata_regex = re.compile(metadata_regex)
-        super().__init__(path, base_url, regex, files_persist, pre_download_kernels)
+        super().__init__(path, base_url, regex, keep_kernels, pre_download_kernels, min_time_to_load, max_time_to_load)
+
+    def parse_kernel_time_bounds(self, filename, url) -> Dict:
+        """
+        Is not being used, have to be overwritten, because is abstract in the parent class
+        """
+        ...
 
     def load_metadata(self) -> List[LBLDynamicKernel]:
         """
@@ -599,52 +683,85 @@ class LBLDynamicKernelLoader(DynamicKernelManager):
                 os.path.join(self.path, kernel_filename),
                 metadata_url,
                 os.path.join(self.path, metadata_filename),
+                keep_kernel=self.keep_kernels,
             )
             for kernel_url, kernel_filename, metadata_url, metadata_filename in zip(
                 kernel_urls, kernel_filenames, metadata_urls, metadata_filenames
             )
         ]
-        self.kernel_pool_len = len(self.kernel_pool)
         semaphore = asyncio.Semaphore(MAX_KERNEL_DOWNLOADS)
 
         pbar = tqdm(total=len(self.kernel_pool), desc="Downloading dynamic kernel metadata", ncols=TQDM_NCOLS)
 
         tasks = [kernel.get_time_interval(semaphore, pbar) for kernel in self.kernel_pool]
         asyncio.run(asyncio.gather(*tasks))
-        
+
         pbar.close()
 
+        self.apply_time_interval_kernel_filter()
+        self.kernel_pool_len = len(self.kernel_pool)
         self.kernel_pool = sorted(self.kernel_pool, key=lambda x: x.time_start)
 
 
-class PriorityKernelManagement:
+class LROCDynamicKernelLoader(DynamicKernelManager):
+    FILENAME_PATTERN = re.compile(r"lrolc_(\d{7})_(\d{7})")
 
-    def __init__(self, kernel_managers: List[LBLDynamicKernelLoader]) -> None:
-        """kernel_managers: list of kernel managers, ordered by priority"""
+    def parse_kernel_time_bounds(self, filename: str, url: str) -> Dict[str, Time]:
+        """
+        Extracts time_start and time_stop from filenames matching the LROC kernel pattern.
+        Expected format: lrolc_YYYYDDD_YYYYDDD.*
+        """
+        match = self.FILENAME_PATTERN.search(filename)
+        if not match:
+            raise ValueError(f"Filename does not match expected LROC pattern: {filename}")
+
+        start_doy, end_doy = match.groups()
+        start_str = f"{start_doy[:4]}:{start_doy[4:]}"
+        end_str = f"{end_doy[:4]}:{end_doy[4:]}"
+        t_start = Time(start_str, format="yday", scale="utc")
+        t_end = Time(end_str, format="yday", scale="utc")
+
+        logger.debug("Parsed LROC kernel time range from '%s': %s → %s", filename, t_start.iso, t_end.iso)
+        return {"time_start": t_start, "time_stop": t_end}
+
+
+class PriorityKernelLoader:
+    """
+    Manages multiple kernel loaders with priority order.
+    Ensures at least one kernel covers the given time.
+    """
+
+    def __init__(self, kernel_managers: Sequence[LBLDynamicKernelLoader]) -> None:
         self.kernel_managers = kernel_managers
 
-    ### Priority means we want at leasst one kernel to be present at the given time.
-    ### So we looking at min and max, not for minimal maximal and maximal minimal time :)
     @property
-    def min_loaded_time(self) -> Time:
-        return min(km.min_loaded_time for km in self.kernel_managers)
+    def min_loaded_time(self) -> Optional[Time]:
+        """Earliest time covered by any loader"""
+        if not self.kernel_managers:
+            return None
+
+        return min(km.min_loaded_time for km in self.kernel_managers if km.min_loaded_time is not None)
 
     @property
-    def max_loaded_time(self) -> Time:
-        return max(km.max_loaded_time for km in self.kernel_managers)
+    def max_loaded_time(self) -> Optional[Time]:
+        """Latest time covered by any loader"""
+        if not self.kernel_managers:
+            return None
+        return max(km.max_loaded_time for km in self.kernel_managers if km.max_loaded_time is not None)
 
     def reload_kernels(self, time: Time) -> bool:
         """
-        Reloads kernels for given time
+        Attempt to reload kernels for the given time.
+        Returns True if any loader handled it.
         """
-        for kernel_manager in self.kernel_managers:
-            if kernel_manager.reload_kernels(time):
+        for i, km in enumerate(self.kernel_managers):
+            if km.reload_kernels(time):
+                logger.debug("Time %s handled by kernel manager #%d", time.iso, i)
                 return True
+        logger.warning("No kernel manager could handle time %s", time.iso)
         return False
 
     def unload(self) -> None:
-        """
-        Unload all loaded kernels
-        """
-        for kernel_manager in self.kernel_managers:
-            kernel_manager.unload()
+        """Unload all kernels from all managers"""
+        for km in self.kernel_managers:
+            km.unload()

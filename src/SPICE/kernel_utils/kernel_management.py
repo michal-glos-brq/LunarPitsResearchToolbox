@@ -10,14 +10,14 @@ Diploma Thesis Project
 
 Description:
 ------------
-This module provides a structured management system for SPICE kernels 
-related to lunar exploration. It facilitates the loading, unloading, 
-and organization of static and dynamic kernels for precise orbital 
+This module provides a structured management system for SPICE kernels
+related to lunar exploration. It facilitates the loading, unloading,
+and organization of static and dynamic kernels for precise orbital
 calculations and planetary data processing.
 """
 
 from abc import ABC
-from typing import List, Literal, Optional
+from typing import List, Literal
 from collections import OrderedDict
 
 from astropy.time import Time
@@ -34,16 +34,15 @@ from src.SPICE.config import (
     lro_url,
 )
 from src.global_config import LUNAR_FRAME
-from src.SPICE.kernel_utils.spice_utils import (
+from src.SPICE.kernel_utils.spice_kernels import (
     BaseKernel,
     LROCDynamicKernelLoader,
     LBLDynamicKernelLoader,
-    StaticKernelManager,
+    StaticKernelLoader,
     AutoUpdateKernel,
-    PriorityKernelManagement,
+    PriorityKernelLoader,
 )
 from src.SPICE.kernel_utils.detailed_model import DetailedModelDSKKernel
-
 
 
 class BaseKernelManager(ABC):
@@ -56,11 +55,15 @@ class BaseKernelManager(ABC):
 
     keys = ["lsk", "sclk", "pck", "fk", "bpck", "ik", "ck", "spk", "dsk"]
 
-    def __init__(self):
+    def __init__(self, min_required_time: Time = None, max_required_time: Time = None):
+        # In case we want only partial coverage
+        self.min_required_time = min_required_time
+        self.max_required_time = max_required_time
+
         self.static_kernels: OrderedDict[str, List[BaseKernel]] = OrderedDict(
-        [
-            (
-                "lsk",
+            [
+                (
+                    "lsk",
                     [
                         BaseKernel(
                             "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls",
@@ -89,7 +92,7 @@ class BaseKernelManager(ABC):
             dynamic_kernel.unload()
 
     def load_static_kernels(self) -> None:
-        self.static_kernel_manager = StaticKernelManager(self.static_kernels)
+        self.static_kernel_manager = StaticKernelLoader(self.static_kernels)
         self.static_kernel_manager.load()
 
     @property
@@ -114,11 +117,17 @@ class BaseKernelManager(ABC):
 
 class LunarKernelManager(BaseKernelManager):
     # spice.furnsh(LUNAR_MODEL["dsk_path"])
-    def __init__(self, frame: Literal["MOON_ME", "MOON_PA_DE440"] = LUNAR_FRAME, detailed: bool = False):
+    def __init__(
+        self,
+        frame: Literal["MOON_ME", "MOON_PA_DE440"] = LUNAR_FRAME,
+        detailed: bool = False,
+        min_required_time: Time = None,
+        max_required_time: Time = None,
+    ):
         """
         You can choose the lunar frame with frame and DSK model - more detailed have to be compiled locally
         """
-        super().__init__()
+        super().__init__(min_required_time=min_required_time, max_required_time=max_required_time)
         self.main_reference_frame = frame
         # Following two kernels are universal and always needed
         self.static_kernels["bpck"].append(
@@ -161,17 +170,31 @@ class LunarKernelManager(BaseKernelManager):
 
 
 class LROKernelManager(LunarKernelManager):
-    def __init__(self, frame: Literal["MOON_ME", "MOON_PA_DE440"] = LUNAR_FRAME, detailed: bool = False, pre_download_kernels: bool = True, diviner_ck: bool = False, lroc_ck: bool = False):
+    def __init__(
+        self,
+        frame: Literal["MOON_ME", "MOON_PA_DE440"] = LUNAR_FRAME,
+        detailed: bool = False,
+        pre_download_kernels: bool = True,
+        diviner_ck: bool = False,
+        lroc_ck: bool = False,
+        keep_dynamic_kernels: bool = True,
+        min_required_time: Time = None,
+        max_required_time: Time = None,
+    ):
         """
         Above the Lunar kernel manager, add LRO specific SPICE kernels too
-        
+
         Args:
             frame (Literal["MOON_ME", "MOON_PA_DE440"], optional): Lunar frame. Defaults to LUNAR_FRAME.
             detailed (bool, optional): Use detailed DSK model. Defaults to False to use MOON_LOWRES.dsk
             pre_download_kernels (bool, optional): Pre-download kernels, otherwise download just before loading. Defaults
             diviner_ck (bool, optional): Use DIVINER CK kernels. Defaults to False.
+            lroc_ck (bool, optional): Use LROC CK kernels. Defaults to False.
+            keep_dynamic_kernels (bool, optional): Do not delete dynamic kernels once unloaded. Defaults to True.
         """
-        super().__init__(frame=frame, detailed=detailed)
+        super().__init__(
+            frame=frame, detailed=detailed, min_required_time=min_required_time, max_required_time=max_required_time
+        )
         # Spacecraft clock
         self.static_kernels["sclk"].append(AutoUpdateKernel(lro_url("sclk/"), lro_path("sclk"), r"lro_clkcor.*.tsc"))
         self.static_kernels["fk"] += [
@@ -180,7 +203,10 @@ class LROKernelManager(LunarKernelManager):
             # BaseKernel(grail_url("fk/lro_frames_2010214_v01.tf"), lro_path("fk/lro_frames_2010214_v01.tf")),
             # BaseKernel(lro_url("fk/lro_frames_2012255_v02.tf"), lro_path("fk/lro_frames_2012255_v02.tf")),
             # With the CK temp.corrected frames
-            BaseKernel("https://naif.jpl.nasa.gov/pub/naif/LRO/kernels/fk/lro_frames_2014049_v01.tf", lro_path("fk/lro_frames_2014049_v01.tf")),
+            BaseKernel(
+                "https://naif.jpl.nasa.gov/pub/naif/LRO/kernels/fk/lro_frames_2014049_v01.tf",
+                lro_path("fk/lro_frames_2014049_v01.tf"),
+            ),
         ]
         self.static_kernels["ik"] += [
             # Instrument kernels
@@ -196,28 +222,73 @@ class LROKernelManager(LunarKernelManager):
         # Define dynamic kernels
         self.dynamic_kernels = [
             # CK kernels of LRO
-            LBLDynamicKernelLoader(lro_path("ck"), lro_url("ck/"), r"lrosc.*.bc", r"lrosc.*.lbl", pre_download_kernels=pre_download_kernels, files_persist=SPICE_PERSIST),
+            LBLDynamicKernelLoader(
+                lro_path("ck"),
+                lro_url("ck/"),
+                r"lrosc.*.bc",
+                r"lrosc.*.lbl",
+                pre_download_kernels=pre_download_kernels,
+                min_time_to_load=min_required_time,
+                max_time_to_load=max_required_time,
+                keep_kernels=keep_dynamic_kernels,
+            ),
             # LRO trajectory
-            LBLDynamicKernelLoader(lro_path("spk"), lro_url("spk/"), r"lrorg.*.bsp", r"lrorg.*.lbl", pre_download_kernels=pre_download_kernels, files_persist=SPICE_PERSIST),
+            LBLDynamicKernelLoader(
+                lro_path("spk"),
+                lro_url("spk/"),
+                r"lrorg.*.bsp",
+                r"lrorg.*.lbl",
+                pre_download_kernels=pre_download_kernels,
+                min_time_to_load=min_required_time,
+                max_time_to_load=max_required_time,
+                keep_kernels=keep_dynamic_kernels,
+            ),
         ]
         if diviner_ck:
             # For now, callbacks serve no actual purpose. Left here in case it would be needed
             # diviner_callback = [ (lambda et: spice.pxform("LRO_DLRE", "LRO_DLRE", et), [0], {}) ]
             self.dynamic_kernels.append(
                 # CK kernels of DIVINER
-                # LBLDynamicKernelLoader(lro_path("ck"), lro_url("ck/"), r"lrodv.*.bc", r"lrodv.*.lbl", pre_download_kernels=pre_download_kernels, files_persist=SPICE_PERSIST, load_callbacks=diviner_callback),
-                LBLDynamicKernelLoader(lro_path("ck"), lro_url("ck/"), r"lrodv.*.bc", r"lrodv.*.lbl", pre_download_kernels=pre_download_kernels, files_persist=SPICE_PERSIST),
+                LBLDynamicKernelLoader(
+                    lro_path("ck"),
+                    lro_url("ck/"),
+                    r"lrodv.*.bc",
+                    r"lrodv.*.lbl",
+                    pre_download_kernels=pre_download_kernels,
+                    min_time_to_load=min_required_time,
+                    max_time_to_load=max_required_time,
+                    keep_kernels=keep_dynamic_kernels,
+                ),
             )
         if lroc_ck:
             self.dynamic_kernels.append(
                 # LROC temperature corrected kernels
-                LROCDynamicKernelLoader(lro_path("ck"), "https://naif.jpl.nasa.gov/pub/naif/LRO/kernels/ck/", r"lrolc.*.bc", pre_download_kernels=pre_download_kernels, files_persist=SPICE_PERSIST)
+                LROCDynamicKernelLoader(
+                    lro_path("ck"),
+                    "https://naif.jpl.nasa.gov/pub/naif/LRO/kernels/ck/",
+                    r"lrolc.*.bc",
+                    pre_download_kernels=pre_download_kernels,
+                    min_time_to_load=min_required_time,
+                    max_time_to_load=max_required_time,
+                    keep_kernels=keep_dynamic_kernels,
+                )
             )
+
 
 class GRAILKernelManager(LunarKernelManager):
 
-    def __init__(self, frame: Literal["MOON_ME", "MOON_PA_DE440"] = LUNAR_FRAME, detailed: bool = False, pre_download_kernels: bool = True):
-        super().__init__(frame=frame, detailed=detailed)
+    def __init__(
+        self,
+        frame: Literal["MOON_ME", "MOON_PA_DE440"] = LUNAR_FRAME,
+        detailed: bool = False,
+        pre_download_kernels: bool = True,
+        keep_dynamic_kernels: bool = True,
+        min_required_time: Time = None,
+        max_required_time: Time = None,
+    ):
+        super().__init__(
+            frame=frame, detailed=detailed, min_required_time=min_required_time, max_required_time=max_required_time
+        )
         # Spacecraft clock
         self.static_kernels["sclk"].append(
             AutoUpdateKernel(grail_url("sclk/"), grail_path("sclk"), r"grb_sclkscet.*.tsc")
@@ -232,9 +303,27 @@ class GRAILKernelManager(LunarKernelManager):
 
         # Dynamic kernels - for both GRAIL satellites - A & B
         self.dynamic_kernels = [
-            LBLDynamicKernelLoader(grail_path("ck"), grail_url("ck/"), r"gra_rec.*.bc", r"gra_rec.*.lbl", pre_download_kernels=pre_download_kernels, files_persist=SPICE_PERSIST),
-            LBLDynamicKernelLoader(grail_path("ck"), grail_url("ck/"), r"grb_rec.*.bc", r"grb_rec.*.lbl", pre_download_kernels=pre_download_kernels, files_persist=SPICE_PERSIST),
-            PriorityKernelManagement(
+            LBLDynamicKernelLoader(
+                grail_path("ck"),
+                grail_url("ck/"),
+                r"gra_rec.*.bc",
+                r"gra_rec.*.lbl",
+                pre_download_kernels=pre_download_kernels,
+                min_time_to_load=min_required_time,
+                max_time_to_load=max_required_time,
+                keep_kernels=keep_dynamic_kernels,
+            ),
+            LBLDynamicKernelLoader(
+                grail_path("ck"),
+                grail_url("ck/"),
+                r"grb_rec.*.bc",
+                r"grb_rec.*.lbl",
+                pre_download_kernels=pre_download_kernels,
+                min_time_to_load=min_required_time,
+                max_time_to_load=max_required_time,
+                keep_kernels=keep_dynamic_kernels,
+            ),
+            PriorityKernelLoader(
                 [
                     LBLDynamicKernelLoader(
                         grail_path("spk"),
@@ -242,9 +331,20 @@ class GRAILKernelManager(LunarKernelManager):
                         r"^(?!grail_120301_120529_sci_v01\.bsp$).*grail.*sci.*\.bsp$",
                         r"^(?!grail_120301_120529_sci_v01\.lbl$).*grail.*sci.*\.lbl$",
                         pre_download_kernels=pre_download_kernels,
-                        files_persist=SPICE_PERSIST,
+                        min_time_to_load=min_required_time,
+                        max_time_to_load=max_required_time,
+                        keep_kernels=keep_dynamic_kernels,
                     ),
-                    LBLDynamicKernelLoader(grail_path("spk"), grail_url("spk/"), r"grail.*nav.*bsp", r"grail.*nav.*lbl", pre_download_kernels=pre_download_kernels, files_persist=SPICE_PERSIST),
+                    LBLDynamicKernelLoader(
+                        grail_path("spk"),
+                        grail_url("spk/"),
+                        r"grail.*nav.*bsp",
+                        r"grail.*nav.*lbl",
+                        pre_download_kernels=pre_download_kernels,
+                        min_time_to_load=min_required_time,
+                        max_time_to_load=max_required_time,
+                        keep_kernels=keep_dynamic_kernels,
+                    ),
                 ]
             ),
         ]

@@ -2,16 +2,41 @@ import os
 import urllib
 import numpy as np
 from functools import partial
+from astropy.time import TimeDelta
 
 from src.global_config import HDD_BASE_PATH
+
+
+##########################################################################################
+#####                                 SPICE UTILS                                    #####
+##########################################################################################
+
 
 ### Limit concurrent kernel downloads
 MAX_KERNEL_DOWNLOADS = 12
 MAX_LOADED_DYNAMIC_KERNELS = 3
+KEEP_DYNAMIC_KERNELS = False
+
+SPICE_CHUNK_SIZE = 8192
+SPICE_READ_TIMEOUT = 15
+SPICE_TOTAL_TIMEOUT = 60
+
 
 ### Some SpiceyPy constants
 SPICE_FOLDER = os.path.join(HDD_BASE_PATH, "SPICE")
 SPICE_PERSIST = True
+
+KERNEL_TIME_KEYS = {"filename_key": "^SPICE_KERNEL", "time_start_key": "START_TIME", "time_stop_key": "STOP_TIME"}
+SECOND_TIMEDELTA = TimeDelta(1, format="sec")
+MAX_RETRIES = 250
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Accept": "*/*",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+}
+
+
 
 ##########################################################################################
 #####                                 SPICE FRAMES                                   #####
@@ -74,6 +99,10 @@ CORSYS = 3
 CORPAR = np.zeros(10)
 DCLASS = 2
 
+# Undersampling rate of TIF file with elevation data
+DEFAULT_TIF_SAMPLE_RATE = 0.075
+# Elevation data are in tens of meters, it's divinded by this constant to obtian kilometers, might vary
+TIF_TO_KM_SCALE = 100
 
 
 ##########################################################################################

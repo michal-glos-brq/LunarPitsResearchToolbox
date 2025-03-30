@@ -43,7 +43,7 @@ import astropy.units as u
 from astropy.coordinates import SphericalRepresentation
 
 from src.global_config import LUNAR_FRAME, TQDM_NCOLS
-from src.SPICE.kernel_utils.spice_utils import BaseKernel
+from src.SPICE.kernel_utils.spice_kernels import BaseKernel
 from src.SPICE.config import (
     LUNAR_TIF_DATA_URL,
     DSK_FILE_CENTER_BODY_ID,
@@ -61,6 +61,8 @@ from src.SPICE.config import (
     DCLASS,
     CORSYS,
     CORPAR,
+    DEFAULT_TIF_SAMPLE_RATE,
+    TIF_TO_KM_SCALE,
     root_path,
     generic_url,
 )
@@ -102,15 +104,16 @@ else:
 
 class DetailedModelDSKKernel(BaseKernel):
 
-    def __init__(self, filename: str, tif_sample_rate: float = 0.075):
+    def __init__(self, filename: str, tif_sample_rate: float = DEFAULT_TIF_SAMPLE_RATE):
         """
         This kernel is very specific - filename is the desired .dsk file, but will be caching files with different
         suffixes. Url will be location of the source tiff data
 
         If DSK file is not found locally, processing begins with kernel instantiation.
         """
-        self.filename = filename # The DSK Kernel name
+        self.filename = filename  # The DSK Kernel name
         self.base_filename = ".".join(filename.split(".")[:-1])
+        # Convert sample rate into percents for gdal CLI use
         self.tif_scale_percents = tif_sample_rate * 100
         super().__init__(LUNAR_TIF_DATA_URL, filename)
 
@@ -138,10 +141,9 @@ class DetailedModelDSKKernel(BaseKernel):
         if response.status_code != 200:
             logger.error("Failed to access BunnyCDN storage.")
             return False
-        
-        filenames = [remote_file["ObjectName"] for remote_file in response.json()]
-        return self.filename.split("/")[-1] in filenames
 
+        filenames = [remote_file["ObjectName"] for remote_file in response.json()]
+        return os.path.basename(self.filename) in filenames
 
     @property
     def tif_filename(self):
@@ -164,7 +166,6 @@ class DetailedModelDSKKernel(BaseKernel):
         url = urljoin(BUNNY_BASE_URL, f"{BUNNY_STORAGE}")
         url = urljoin(url, f"{self.filename.split('/')[-1]}")
         with requests.get(url, headers={"AccessKey": BUNNY_PASSWORD}, stream=True) as r:
-            print(r.status_code)
             r.raise_for_status()  # Ensure request is successful
             total_size = int(r.headers.get("content-length", 0))  # Get file size
             block_size = 1024 * 1024  # 1 MB chunks
@@ -176,7 +177,7 @@ class DetailedModelDSKKernel(BaseKernel):
                 unit_divisor=1024,
                 ncols=TQDM_NCOLS,
                 desc=f"Downloading DSK from BunnyCDN",
-                miniters=1  # Ensures frequent updates
+                miniters=1,  # Ensures frequent updates
             ) as t:
                 for chunk in r.iter_content(block_size):
                     if chunk:  # Filter out keep-alive chunks
@@ -187,7 +188,7 @@ class DetailedModelDSKKernel(BaseKernel):
         with requests.get(self.url, stream=True) as r:
             r.raise_for_status()
             total_size = int(r.headers.get("content-length", 0))
-            block_size = 1024 ** 2  # 1 MB
+            block_size = 1024**2  # 1 MB
             with open(self.tif_filename, "wb") as f, tqdm(
                 total=total_size,
                 unit="B",
@@ -195,7 +196,7 @@ class DetailedModelDSKKernel(BaseKernel):
                 unit_divisor=1024,
                 ncols=TQDM_NCOLS,
                 desc="Downloading TIF file",
-                miniters=1  # Ensure the progress bar updates frequently
+                miniters=1,  # Ensure the progress bar updates frequently
             ) as t:
                 for chunk in r.iter_content(block_size):
                     if chunk:  # Filter out keep-alive new chunks
@@ -230,7 +231,7 @@ class DetailedModelDSKKernel(BaseKernel):
         # Extract coordinates
         x = df["x"].to_numpy()
         y = df["y"].to_numpy()
-        z = (df["z"] / 100).to_numpy().astype(np.float32)  # Convert elevation to kilometers
+        z = (df["z"] / TIF_TO_KM_SCALE).to_numpy().astype(np.float32)  # Convert elevation to kilometers
 
         lon = np.interp(x, (x.min(), x.max()), (-180, 180)) * u.deg
         lat = (90 - (y - y.min()) / (y.max() - y.min()) * 180) * u.deg
