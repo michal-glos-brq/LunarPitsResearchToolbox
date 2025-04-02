@@ -21,6 +21,10 @@ class DivinerInstrument(BaseInstrument):
     frame = "LRO_SC_BUS"
     # Instruments are normalized into the same frame
     sub_instruments = [DivinerSubInstrument(naif_id, _id, pixel_key) for naif_id, _id, pixel_key in DIVINER_SUBINSTRUMENTS]
+    # Default FOV and height in case initialization is in time of failure for this instrument
+    _fov_width = 610
+    _height = 180
+
 
 
 class LolaInstrument(BaseInstrument):
@@ -31,6 +35,9 @@ class LolaInstrument(BaseInstrument):
     frame = "LRO_SC_BUS"
     # Instruments are normalized into the same frame
     sub_instruments = [SubInstrument(naif_id) for naif_id in LOLA_INSTRUMENT_IDS]
+    # Default FOV and height in case initialization is in time of failure for this instrument
+    _fov_width = 1
+    _height = 340
 
 
 class MiniRFInstrument(BaseInstrument):
@@ -42,6 +49,9 @@ class MiniRFInstrument(BaseInstrument):
     frame = "LRO_SC_BUS"
     # Instruments are normalized into the same frame
     sub_instruments = [MiniRFSubInstrument(channel) for channel in MINI_RF_CHANNELS]
+    # Default FOV and height in case initialization is in time of failure for this instrument
+    _fov_width = 80
+    _height = 300
 
 class LROCNACInstrument(BaseInstrument):
     """
@@ -58,6 +68,9 @@ class LROCNACInstrument(BaseInstrument):
     # We choose a common reference frame (e.g., the LRO spacecraft bus frame)
     frame = "LRO_SC_BUS"
     sub_instruments = [SubInstrument(naif_id) for naif_id in LROC_NAC_IDS]
+    # Default FOV and height in case initialization is in time of failure for this instrument
+    _fov_width = 45
+    _height = 220
 
 
 class LROCWACInstrument(BaseInstrument):
@@ -74,4 +87,6 @@ class LROCWACInstrument(BaseInstrument):
     satellite_name = LRO_STR_ID
     frame = "LRO_SC_BUS"
     sub_instruments = [SubInstrument(naif_id) for naif_id in LROC_WAC_IDS]
-
+    # Default FOV and height in case initialization is in time of failure for this instrument
+    _fov_width = 250
+    _height = 250

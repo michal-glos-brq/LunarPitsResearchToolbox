@@ -36,6 +36,20 @@ worker-start:
 		-v $(UTILITY_VOLUME):/app/data \
   		worker || true
 
+
+worker-build:
+	@docker-compose -f docker-compose.worker.yaml build
+
+worker-run:
+	@docker-compose -f docker-compose.worker.yaml up
+
+worker-stop:
+	@docker-compose -f docker-compose.worker.yaml down
+
+worker-force-build:
+	@docker-compose -f docker-compose.worker.yaml build --no-cache
+
+
 ### This will be eventually done through a python script in a loop
 
 # run-celery-worker: setup-pythonpath

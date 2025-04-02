@@ -44,7 +44,7 @@ RUN apt-get update && apt-get install -y \
 RUN locale-gen en_US.UTF-8 && update-locale LANG=en_US.UTF-8
 
 # Copy dependencies, scripts, and source code
-COPY poetry.lock pyproject.toml worker/worker_entrypoint.sh worker/update_code.sh worker/run_celery.sh /app/
+COPY poetry.lock pyproject.toml worker/worker_entrypoint.sh /app/
 COPY src /app/src
 
 
@@ -54,11 +54,11 @@ RUN python3.9 -m venv /app/venv && \
     . /app/venv/bin/activate && poetry install --no-root
 
 
-# Set up cron job for code updates
-RUN chmod +x /app/worker_entrypoint.sh /app/update_code.sh /app/run_celery.sh && \
-    echo "*/5 * * * * root /app/update_code.sh >> /var/log/update_code.log 2>&1" > /etc/cron.d/celery_update && \
-    chmod 0644 /etc/cron.d/celery_update && \
-    crontab /etc/cron.d/celery_update
+# # Set up cron job for code updates
+# RUN chmod +x /app/worker_entrypoint.sh /app/update_code.sh /app/run_celery.sh && \
+#     echo "*/5 * * * * root /app/update_code.sh >> /var/log/update_code.log 2>&1" > /etc/cron.d/celery_update && \
+#     chmod 0644 /etc/cron.d/celery_update && \
+#     crontab /etc/cron.d/celery_update
 
 # Start bash
 ENTRYPOINT ["/bin/bash", "/app/worker_entrypoint.sh"]

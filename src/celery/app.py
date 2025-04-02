@@ -12,14 +12,15 @@ There are broad tasks:
  - Data Processor - Process the data in sensible temporal and spatial data
  - Analysis will be made locally
 """
-
+import os
 from celery import Celery
 
-# Celery Configuration
+master_ip = os.getenv("MASTER_IP____", "localhost")  # fallback for local testing
+
 celery = Celery(
     "worker",
-    broker="redis://Redis:6379/0",  # Redis as broker
-    backend="redis://Redis:6379/0"  # Redis as backend (for task tracking, not storing results permanently)
+    broker=f"redis://{master_ip}:6379/0",
+    backend=f"redis://{master_ip}:6379/0"
 )
 
 celery.conf.update(

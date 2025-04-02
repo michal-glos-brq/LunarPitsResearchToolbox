@@ -4,5 +4,5 @@
 # fi
 
 echo "🚀 Launching Celery worker with ID: $WORKER_ID"
-# celery -A celery_app worker --hostname="$WORKER_ID" --loglevel=info --concurrency=1
+celery -A celery_app worker --hostname="$WORKER_ID" --loglevel=info --concurrency=1
 bash

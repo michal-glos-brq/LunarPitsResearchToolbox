@@ -205,6 +205,7 @@ class BaseKernel:
         self._loaded = False
         self.url = url
         self.filename = filename
+        self.corrupted = False
         self._keep_kernel = keep_kernel
         os.makedirs(os.path.dirname(self.filename), exist_ok=True)
         # Obtain the lock for kernel and register the use
@@ -246,7 +247,7 @@ class BaseKernel:
             self.ensure_downloaded()
             spice.furnsh(self.filename)
             self._loaded = True
-            logger.debug("Loaded kernel %s", self.filename)
+            logger.debug("[SPICE-LOAD] Loading kernel: %s", self.filename)
         else:
             logger.debug("Kernel %s is already loaded", self.filename)
 
@@ -271,27 +272,68 @@ class BaseKernel:
 
     def _download_file(self, url: str, filename: str) -> None:
         """
-        Synchronously download the file with retries.
+        Synchronously download the file with resume support and retries.
         Includes file size verification using expected Content-Length.
         """
         retries = 0
         temp_path = filename + ".tmp"
         headers = {"User-Agent": "Mozilla/5.0 (compatible; MyDownloader/1.0)"}
-
+        corruption = False
+        
         while retries < MAX_RETRIES:
             try:
-                with requests.get(url, stream=True, timeout=SPICE_TOTAL_TIMEOUT, headers=headers) as r:
-                    r.raise_for_status()
-                    expected_size = r.headers.get("Content-Length")
-                    expected_size = int(expected_size) if expected_size and expected_size.isdigit() else None
+                resume_pos = os.path.getsize(temp_path) if os.path.exists(temp_path) else 0
+                if resume_pos:
+                    headers["Range"] = f"bytes={resume_pos}-"
 
-                    with open(temp_path, "wb") as f:
+                with requests.get(url, stream=True, timeout=SPICE_TOTAL_TIMEOUT, headers=headers) as r:
+                    if r.status_code == 416:  # Requested range not satisfiable
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+                        resume_pos = 0
+                        headers.pop("Range", None)
+                        continue  # Retry without resume
+
+                    r.raise_for_status()
+                    total_size = None
+
+                    # Determine total expected size
+                    if resume_pos:
+                        cr = r.headers.get("Content-Range")
+                        if cr and "/" in cr:
+                            try:
+                                total_size = int(cr.split("/")[-1])
+                            except ValueError:
+                                total_size = None
+                        else:
+                            logger.warning("Server did not return Content-Range; cannot resume. Restarting download.")
+                            resume_pos = 0
+                            headers.pop("Range", None)
+                            continue  # Retry from beginning
+                    else:
+                        cl = r.headers.get("Content-Length")
+                        total_size = int(cl) if cl and cl.isdigit() else None
+
+                    if total_size is None or total_size <= 0:
+                        if not corruption:
+                            corruption = True
+                        else:
+                            logger.warning(f"File {filename} looks corrupted on remote server {url}")
+                            self.corrupted = True
+                            if os.path.exists(temp_path):
+                                os.remove(temp_path)
+                            return
+
+                    mode = "ab" if resume_pos else "wb"
+                    with open(temp_path, mode) as f:
                         for chunk in r.iter_content(chunk_size=SPICE_CHUNK_SIZE):
-                            if chunk:  # filter out keep-alive chunks
+                            if chunk:
                                 f.write(chunk)
 
                 # Verify the file size
-                self._verify_file_size(temp_path, expected_size)
+                actual_size = os.path.getsize(temp_path)
+                if total_size is not None and actual_size != total_size:
+                    raise ValueError(f"Size mismatch: expected {total_size} bytes, got {actual_size} bytes")
 
                 os.rename(temp_path, filename)
                 logger.debug("Successfully downloaded %s", url)
@@ -320,6 +362,7 @@ class BaseKernel:
         """
         retries = 0
         temp_path = filename + ".tmp"
+        corruption = False
 
         while retries < MAX_RETRIES:
             try:
@@ -380,6 +423,15 @@ class BaseKernel:
                 actual_size = os.path.getsize(temp_path)
                 if total_size is not None and actual_size != total_size:
                     raise ValueError(f"Size mismatch: expected {total_size} bytes, got {actual_size} bytes")
+                if total_size <= 0:
+                    if not corruption:
+                        corruption = True
+                    else:
+                        self.corrupted = True
+                        logger.warning(f"File {self.filename} looks corrupted on remote server {url}")
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+                        return
 
                 os.rename(temp_path, filename)
                 logger.debug("Successfully downloaded %s", url)

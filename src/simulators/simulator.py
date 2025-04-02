@@ -165,8 +165,14 @@ class RemoteSensingSimulator:
                 heights=DynamicMaxBuffer(DYNAMIC_MAX_BUFFER_HEIGHT_SIZE),
                 fov_widths=DynamicMaxBuffer(DYNAMIC_MAX_BUFFER_FOV_WIDTH_SIZE)
             )
-            instrument_state.heights.add(np.linalg.norm(instrument.project_boresight(self.current_simulation_timestamp_et).spacecraft_relative))
-            instrument_state.fov_widths.add(instrument.recalculate_bounds_to_boresight_distance(self.current_simulation_timestamp_et))
+            try:
+                instrument_state.heights.add(np.linalg.norm(instrument.project_boresight(self.current_simulation_timestamp_et).spacecraft_relative))
+            except Exception as e:
+                instrument_state.heights.add(instrument._height)
+            try:
+                instrument_state.fov_widths.add(instrument.recalculate_bounds_to_boresight_distance(self.current_simulation_timestamp_et))
+            except Exception as e:
+                instrument_state.fov_widths.add(instrument._fov_width)
             self.instrument_simulation_states[instrument.name] = instrument_state
 
         max_speed = DynamicMaxBuffer(DYNAMIC_MAX_BUFFER_SPACECRAFT_VELOCITY_SIZE)

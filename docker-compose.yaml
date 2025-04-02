@@ -21,6 +21,17 @@ services:
     restart: always
     command: redis-server --save 60 1 --loglevel warning
 
+  flower:
+    image: mher/flower
+    container_name: Flower
+    restart: always
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
 volumes:
   redis_data:
     driver: local
