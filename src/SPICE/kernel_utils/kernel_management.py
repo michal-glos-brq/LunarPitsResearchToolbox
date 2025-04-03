@@ -385,6 +385,7 @@ class LunarKernelManager(BaseKernelManager, LunarKernelManagerMixin):
         min_required_time: Time = None,
         max_required_time: Time = None,
         pre_load_static_kernels: bool = SPICE_PRELOAD,
+        **kwargs,
     ):
         super().__init__(min_required_time=min_required_time, max_required_time=max_required_time)
         self.setup_lunar_kernels(frame=frame, detailed=detailed, min_required_time=min_required_time, max_required_time=max_required_time)
@@ -403,6 +404,7 @@ class LROKernelManager(BaseKernelManager, LunarKernelManagerMixin, LROKernelMana
         keep_dynamic_kernels: bool = SPICE_PERSIST,
         min_required_time: Time = None,
         max_required_time: Time = None,
+        **kwargs,
     ):
         super().__init__(min_required_time=min_required_time, max_required_time=max_required_time)
         self.setup_lunar_kernels(frame=frame, detailed=detailed)
@@ -428,6 +430,7 @@ class GRAILKernelManager(LunarKernelManager):
         pre_load_static_kernels: bool = SPICE_PRELOAD,
         min_required_time: Time = None,
         max_required_time: Time = None,
+        **kwargs,
     ):
         super().__init__(min_required_time=min_required_time, max_required_time=max_required_time)
         self.setup_lunar_kernels(frame=frame, detailed=detailed)

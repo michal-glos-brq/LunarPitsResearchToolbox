@@ -10,7 +10,6 @@ MONGO_URI = "mongodb://admin:password@localhost:27017"
 
 
 PIT_ATLAS_DB_NAME = "lro_pits"
-PIT_ATLAS_PARSED_DB_NAME = "lro_pits_parsed"
 
 PIT_COLLECTION_NAME = "pits"
 PIT_DETAIL_COLLECTION_NAME = "pit_details"

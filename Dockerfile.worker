@@ -24,10 +24,10 @@ RUN apt-get update && apt-get install -y \
     dpkg-reconfigure --frontend noninteractive tzdata && \
     rm -rf /var/lib/apt/lists/*
 
-# Install ZeroTier
-RUN curl -s https://install.zerotier.com | bash && \
-    mkdir -p /var/lib/zerotier-one && \
-    chmod 755 /var/lib/zerotier-one
+# # Install ZeroTier
+# RUN curl -s https://install.zerotier.com | bash && \
+#     mkdir -p /var/lib/zerotier-one && \
+#     chmod 755 /var/lib/zerotier-one
 
 # Add deadsnakes PPA (now that software-properties-common is installed)
 RUN add-apt-repository ppa:deadsnakes/ppa -y && apt-get update

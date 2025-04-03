@@ -1,15 +1,16 @@
-from app import celery
-from astropy.time import Time
+from astropy.time import Time, TimeDelta
 import logging
 
+
+from src.celery.app import app
 from src.SPICE.kernel_utils.kernel_management import LROKernelManager, GRAILKernelManager
-from src.SPICE.instruments import lro as lro_instr
+from src.SPICE.instruments import lro as lro_instruments
+from src.SPICE.instruments import grail as grail_instruments
 from src.simulators.simulator import RemoteSensingSimulator
-from src.simulators.filters import PointFilter
 from src.simulators.filters import PointFilter, AreaFilter
 
-logger = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
 
 
 KERNEL_MANAGER_MAP = {
@@ -18,78 +19,118 @@ KERNEL_MANAGER_MAP = {
 }
 
 INSTRUMENT_MAP = {
-    "diviner": lro_instr.DivinerInstrument,
-    "lola": lro_instr.LolaInstrument,
-    "mini_rf": lro_instr.MiniRFInstrument,
-    "lroc_wac": lro_instr.LROCWACInstrument,
-    "lroc_nac": lro_instr.LROCNACInstrument,
+    "diviner": lro_instruments.DivinerInstrument,
+    "lola": lro_instruments.LolaInstrument,
+    "mini_rf": lro_instruments.MiniRFInstrument,
+    "lroc_wac": lro_instruments.LROCWACInstrument,
+    "lroc_nac": lro_instruments.LROCNACInstrument,
+    "grai_a": grail_instruments.GrailAInstrument,
+    "grai_b": grail_instruments.GrailBInstrument,
+}
+
+FILTER_MAP = {
+    "point": PointFilter,
+    "area": AreaFilter,
 }
 
 
-@celery.task(bind=True)
-def run_remote_sensing_simulation(self,
-                                  start_time_iso: str,
-                                  end_time_iso: str,
-                                  kernel_manager_type: str = "LRO",
-                                  delete_kernels: bool = False,
-                                  instrument_names: list = None) -> dict:
+@app.task(bind=True)
+def run_remote_sensing_simulation(
+    self,
+    start_time_et: float,
+    end_time_et: float,
+    instrument_names: list[str],
+    kernel_manager_type: str,
+    keep_dynamic_kernels: bool,
+    filter_type: str,
+    kernel_manager_kwargs: dict,
+    filter_kwargs: dict,
+    **kwargs,
+) -> dict:
     """
-    Celery task to run remote sensing simulation.
+    Run a remote sensing simulation with the specified parameters.
 
-    :param start_time_iso: Start time in ISO format (UTC)
-    :param end_time_iso: End time in ISO format (UTC)
-    :param kernel_manager_type: "LRO" or "GRAIL"
-    :param delete_kernels: If True, dynamic kernels will be deleted after use
-    :param instrument_names: List of instrument short names (e.g. ["diviner", "lola"])
-    :return: Simulation metadata
+    Parameters:
+      - start_time_et (float): Start time (ephemeris time) in seconds.
+      - end_time_et (float): End time (ephemeris time) in seconds.
+      - instrument_names (list[str]): List of instrument names to simulate.
+      - kernel_manager_type (str): Type of kernel manager ('LRO' or 'GRAIL').
+      - keep_dynamic_kernels (bool): Whether to keep dynamic kernels after use.
+      - filter_type (str): Filter type ('point' or 'area').
+      - kernel_manager_kwargs (dict): Additional parameters for kernel manager instantiation.
+      - filter_kwargs (dict): Additional parameters for filter instantiation.
+      - kwargs: Any extra keyword arguments.
+
+    Returns:
+      A summary dictionary of the simulation results.
     """
+
+    logger.info(
+        f"Received args: start_time_et={start_time_et}, end_time_et={end_time_et}, "
+        f"instrument_names={instrument_names}, kernel_manager_type={kernel_manager_type}, "
+        f"keep_dynamic_kernels={keep_dynamic_kernels}, filter_type={filter_type}, "
+        f"kernel_manager_kwargs={kernel_manager_kwargs}, filter_kwargs={filter_kwargs}, "
+        f"extra kwargs={kwargs}"
+    )
 
     try:
-        start_time = Time(start_time_iso, scale="utc")
-        end_time = Time(end_time_iso, scale="utc")
+        # Astropy works for 8 decimal places, hence the 8
+        start_time = Time(start_time_et, format="cxcsec", scale="tdb")
+        end_time = Time(end_time_et, format="cxcsec", scale="tdb")
     except Exception as e:
         raise ValueError(f"Invalid time format: {e}")
 
+    ### Sanity check
+
     if kernel_manager_type not in KERNEL_MANAGER_MAP:
-        raise ValueError(f"Unsupported kernel manager: {kernel_manager_type}")
+        raise ValueError(
+            f"Unsupported kernel manager: {kernel_manager_type}. Supported types are: {list(KERNEL_MANAGER_MAP.keys())}"
+        )
 
-    if not instrument_names:
-        instrument_names = list(INSTRUMENT_MAP.keys())
+    for instrument in instrument_names:
+        if instrument not in INSTRUMENT_MAP:
+            raise ValueError(
+                f"Unsupported instrument: {instrument}. Supported instruments are: {list(INSTRUMENT_MAP.keys())}"
+            )
 
-    try:
-        instruments = [INSTRUMENT_MAP[name]() for name in instrument_names]
-    except KeyError as e:
-        raise ValueError(f"Invalid instrument name: {e}")
+    ### Merging configurations
 
-    kernel_manager_cls = KERNEL_MANAGER_MAP[kernel_manager_type]
-    kernel_manager = kernel_manager_cls(
-        frame="MOON_PA_DE440",
-        detailed=True,
-        pre_download_kernels=True,
-        diviner_ck=True,
-        lroc_ck=True,
-        keep_dynamic_kernels=not delete_kernels,
-    )
+    kernel_manager_kwargs.setdefault("min_required_time", start_time - TimeDelta(10, format="sec"))
+    kernel_manager_kwargs.setdefault("max_required_time", end_time + TimeDelta(10, format="sec"))
+    kernel_manager_kwargs.setdefault("keep_dynamic_kernels", keep_dynamic_kernels)
 
-    kernel_manager.activate()
-    filter_obj = PointFilter(35, kernel_manager.static_kernels['dsk'][0].filename)
+    ### Instantiating and prepare required objects
+    kernel_manager = KERNEL_MANAGER_MAP[kernel_manager_type](**kernel_manager_kwargs)
+    kernel_manager.activate(start_time)
 
-    logger.info(f"Starting simulation with instruments: {instrument_names}")
+    filter_obj = FILTER_MAP[filter_type](**filter_kwargs)
+
+    instruments = [INSTRUMENT_MAP[name]() for name in instrument_names]
+
+    ### Run the simulation
     simulator = RemoteSensingSimulator(instruments, filter_obj, kernel_manager)
 
-    simulator.start_simulation(
-        start_time=start_time,
-        end_time=end_time,
-        interactive_progress=False,
-        current_task=self,
-    )
+    try:
+        simulator.start_simulation(
+            start_time=start_time,
+            end_time=end_time,
+            interactive_progress=False,
+            current_task=self,
+        )
+    except Exception as e:
+        logger.error(f"Simulation failed: {e}")
+        return {
+            "status": "failed",
+            "error": str(e),
+            "start_time": start_time.utc.iso,
+            "end_time": end_time.utc.iso,
+        }
+    finally:
+        kernel_manager.unload_all()
 
     logger.info("Simulation completed successfully.")
     return {
         "status": "completed",
-        "start_time": start_time_iso,
-        "end_time": end_time_iso,
-        "instruments": instrument_names,
-        "kernel_manager": kernel_manager_type,
-        "deleted_kernels_after_use": delete_kernels,
+        "start_time": start_time.utc.iso,
+        "end_time": end_time.utc.iso,
     }

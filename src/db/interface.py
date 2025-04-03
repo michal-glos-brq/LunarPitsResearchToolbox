@@ -1,6 +1,6 @@
 """
-This is the interface to our Mongo DB. Mongo is kind of exploited for our purpose just to keep
-the persistant storage in one place and easily accessible on the network.
+This is the interface to our Mongo DB. Mongo is exploited as a centralized, persistent storage accessible over the network.
+It's purpose is to extract all DB work into this file
 
 A lot of redundant and overly-specific  use cases to general use case functionalities are implemented - refactoring needed.
 """
@@ -14,7 +14,6 @@ from pymongo import MongoClient, errors
 from src.db.config import (
     MONGO_URI,
     PIT_ATLAS_DB_NAME,
-    PIT_ATLAS_PARSED_DB_NAME,
     PIT_COLLECTION_NAME,
     PIT_DETAIL_COLLECTION_NAME,
     PIT_ATLAS_IMAGE_COLLECTION_NAME,
@@ -24,21 +23,35 @@ from src.db.config import (
 
 class Sessions:
     """
-    MongoDB session manager for simulation and pit location data.
-
-    This class provides methods to:
-      - Retrieve lunar pit locations as a Pandas DataFrame.
-      - Insert simulation result documents into a MongoDB timeseries collection synchronously.
-
-    Simulation results are stored in a timeseries collection with indexes on:
-      - astro_timestamp (ephemeris time, ET, as a float)
-      - instrument (instrument name)
-      - min_distance (the computed minimum distance)
+    MongoDB session manager for simulation results and lunar pit atlas data.
+    
+    This class provides a centralized interface to:
+      - Access MongoDB databases for parsed and raw lunar pit data (pits, pit details, images).
+      - Fetch all parsed lunar pit locations as a Pandas DataFrame (with caching).
+      - Initialize and manage timeseries collections for simulation results (positive and failed).
+      - Perform threaded, batched inserts of simulation results into MongoDB with retry logic.
+    
+    Notes:
+      - Simulation collections use MongoDB's timeseries format, with `timestamp_utc` as the time field
+        and `meta` as the metadata field.
+      - All database and collection names are defined in `src.db.config`.
+      - This class is intentionally non-modular and purpose-built for fast iteration in scientific pipelines.
     """
+
     client: MongoClient = None
     sessions = {}
     lunar_pit_locations = None
+    # It will eventually go thoutgh ...
     max_retries = 100
+
+
+    def __init__(self):
+        """
+        Initialize the Sessions class.
+        This is a singleton class, so the constructor should not be called directly.
+        Use the static methods instead.
+        """
+        raise NotImplementedError("This class is a singleton and cannot be instantiated.")
 
     @staticmethod
     def get_db_session(db_name: str):
@@ -54,22 +67,24 @@ class Sessions:
             return Sessions.sessions[db_name]
 
         if db_name not in Sessions.client.list_database_names():
-            Sessions.client[db_name].create_collection("placeholder_collection")
-            Sessions.client[db_name]["placeholder_collection"].drop()
+            # Create and immediately drop a temporary collection to initialize the database.
+            Sessions.client[db_name].create_collection("_placeholder_collection")
+            Sessions.client[db_name]["_placeholder_collection"].drop()
         Sessions.sessions[db_name] = Sessions.client[db_name]
+
         return Sessions.sessions[db_name]
 
     @staticmethod
     def get_all_pits_points():
         """
-        Fetches all lunar pit locations from the MongoDB collection and returns them as a Pandas DataFrame.
-
-        The resulting DataFrame uses the pit 'name' as its index and includes 'latitude' and 'longitude' columns.
+        Fetches all lunar pit locations from the parsed MongoDB collection
+        and returns them as a Pandas DataFrame, with pit 'name' as index
+        and columns for 'latitude' and 'longitude'.
         """
         if Sessions.lunar_pit_locations is not None:
             return Sessions.lunar_pit_locations
 
-        session = Sessions.get_db_session(PIT_ATLAS_PARSED_DB_NAME)
+        session = Sessions.get_db_session(PIT_ATLAS_DB_NAME)
         collection = session[PIT_COLLECTION_NAME]
         query_results = list(collection.find({}, {"location": 1, "name": 1}))
         data = [
@@ -87,7 +102,12 @@ class Sessions:
     @staticmethod
     def prepare_simulation_collections(instrument_name: str, succesfull_indices: List[str] = ["et"]):
         """
-        Create collection to store positive and failed simulation steps results
+        Ensures collections exist to store positive and failed simulation results for the given instrument.
+        Returns a tuple: (positive_collection, failed_collection).
+
+        params:
+        instrument_name (str): The name of the instrument for which collections are created.
+        succesfull_indices (list): List of indices to create for the positive collection.
         """
         session = Sessions.get_db_session(SIMULATION_DB_NAME)
         positive_collection_name = f"{instrument_name}"
@@ -112,7 +132,7 @@ class Sessions:
         for index in succesfull_indices:
             positive_collection.create_index(index)
         # collection.create_index([("boresight", "2dsphere")])  # Spatial index for boresight queries
-
+        # Optionally: positive_collection.create_index([("boresight", "2dsphere")]) for spatial queries.
         if failed_collection_name not in session.list_collection_names():
             try:
                 session.create_collection(
@@ -127,8 +147,6 @@ class Sessions:
                 pass
 
         failed_collection = session[failed_collection_name]
-
-        # Ensure proper indexes exist for efficient querying
         failed_collection.create_index("et")  # Queries by time range
 
         return positive_collection, failed_collection
@@ -142,7 +160,7 @@ class Sessions:
         if not results:
             return
         thread = threading.Thread(target=Sessions.insert_batch_timeseries_results, args=(results, collection))
-        thread.daemon = True  # Kills thread if the main program exits
+        thread.daemon = True  # The thread will exit if the main program exits.
         thread.start()
         return thread
 
@@ -169,7 +187,7 @@ class Sessions:
 
 
     @staticmethod
-    def get_lunar_pit_collections(parsed: bool = True):
+    def get_lunar_pit_collections(db_name=PIT_ATLAS_DB_NAME):
         """
         Returns a list of all lunar pit collections in the database.
         If parsed is True, it returns collections from the parsed database.
@@ -177,7 +195,6 @@ class Sessions:
 
         Returns a tuple of (pits, pit-details, image) collections
         """
-        db_name = PIT_ATLAS_PARSED_DB_NAME if parsed else PIT_ATLAS_DB_NAME
         session = Sessions.get_db_session(db_name)
         return (
             session[PIT_COLLECTION_NAME],
