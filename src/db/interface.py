@@ -6,15 +6,18 @@ A lot of redundant and overly-specific  use cases to general use case functional
 """
 
 
-from typing import List, Optional
+from typing import List
 import time
 import threading
 import pandas as pd
 from pymongo import MongoClient, errors
 from src.db.config import (
     MONGO_URI,
+    PIT_ATLAS_DB_NAME,
     PIT_ATLAS_PARSED_DB_NAME,
     PIT_COLLECTION_NAME,
+    PIT_DETAIL_COLLECTION_NAME,
+    PIT_ATLAS_IMAGE_COLLECTION_NAME,
     SIMULATION_DB_NAME,
 )
 
@@ -164,3 +167,20 @@ class Sessions:
                 wait_time *= 1.2
                 time.sleep(wait_time)
 
+
+    @staticmethod
+    def get_lunar_pit_collections(parsed: bool = True):
+        """
+        Returns a list of all lunar pit collections in the database.
+        If parsed is True, it returns collections from the parsed database.
+        Otherwise, it returns collections from the original database.
+
+        Returns a tuple of (pits, pit-details, image) collections
+        """
+        db_name = PIT_ATLAS_PARSED_DB_NAME if parsed else PIT_ATLAS_DB_NAME
+        session = Sessions.get_db_session(db_name)
+        return (
+            session[PIT_COLLECTION_NAME],
+            session[PIT_DETAIL_COLLECTION_NAME],
+            session[PIT_ATLAS_IMAGE_COLLECTION_NAME],
+        )

@@ -19,9 +19,6 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import io
 
-
-### TechDebt ++ Everything is soooo clumsy!
-
 from src.db.mongo.interface import Sessions
 from src.config.diviner_config import DIVINER_BASE_URL, BASE_SUFFIX
 

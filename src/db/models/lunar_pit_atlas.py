@@ -32,7 +32,7 @@ def custom_bool(value: Optional[str]) -> Optional[bool]:
     return None
 
 
-class ImageCollection(BaseModel):
+class ImageMongoObject(BaseModel):
     emission_angle: Optional[float] = None
     image_path: str
     inc_angle: Optional[float] = None
@@ -52,7 +52,7 @@ class ImageCollection(BaseModel):
         return safe_cast(v, int)
 
 
-class PitDetailsCollection(BaseModel):
+class PitDetailsMongoObject(BaseModel):
     azimuth: Optional[int] = None
     beside_dome: Optional[bool] = None
     best_stereo_left: Optional[str] = None
@@ -124,7 +124,7 @@ class PitDetailsCollection(BaseModel):
         return custom_bool(v)
 
 
-class PitsCollection(BaseModel):
+class PitsMongoObject(BaseModel):
     azimuth: Optional[int] = None
     depth: Optional[float] = None
     depth_sorting: Optional[float] = None
