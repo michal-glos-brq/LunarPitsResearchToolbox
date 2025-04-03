@@ -270,6 +270,7 @@ class BaseKernel:
         with FileLock(filename + ".tmp.lock", timeout=SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT):
             self._download_file(url, filename)
 
+    ### Nesting crime scene start
     def _download_file(self, url: str, filename: str) -> None:
         """
         Synchronously download the file with resume support and retries.
@@ -448,6 +449,8 @@ class BaseKernel:
                         os.remove(temp_path)
                     logger.error("Failed to download %s after %s attempts", url, MAX_RETRIES)
                     return
+
+    ### Nesting crime scene end
 
     def __repr__(self):
         return f"<BaseKernel filename='{self.filename}'>"

@@ -46,50 +46,48 @@ def log_spice_exception(e: Exception, context: str = ""):
 
 class DynamicMaxBuffer:
     """
-    This class is used to create a dynamic buffered max value.
+    This class creates a dynamic, buffered maximum value.
     """
 
     def __init__(self, buffer_size: int):
         self.buffer_size = buffer_size
-        self.buffer = np.zeros((buffer_size))
+        self.buffer = np.zeros(buffer_size)
         self.index = 0
         self.maximum = float("-inf")
         self.maximum_ttl = buffer_size
 
     def add(self, value: float):
         self.buffer[self.index] = value
-
         if value >= self.maximum:
-            # New max found — reset TTL
+            # New max found – reset TTL
             self.maximum = value
             self.maximum_ttl = self.buffer_size
         else:
-            # Not the new max — decrease TTL
+            # Not the new max – decrease TTL
             self.maximum_ttl -= 1
             if self.maximum_ttl == 0:
-                # TTL expired — recompute max + reset TTL
+                # TTL expired – recompute max and reset TTL
                 self.maximum = self.buffer.max()
-                # Find index of current max value to estimate new TTL
                 max_pos = np.argmax(self.buffer)
                 distance = (max_pos - self.index) % self.buffer_size
                 self.maximum_ttl = distance if distance != 0 else self.buffer_size
-
         self.index = (self.index + 1) % self.buffer_size
 
 
 class RemoteSensingSimulator:
     """
-    This class is used to simulate the trajectory and orientation of spacecraft and identify time
-    intervals when it was pointing towards some area of our interest on the lunar surface
+    Simulate the trajectory and orientation of a spacecraft to identify time intervals
+    when it points toward an area of interest on the lunar surface.
 
-    Simulation is computationally optimized for a single satellite, but list of instruments.
-    KernelManager has to be pre-configured, only step method is called within the simulation
+    Optimized for a single satellite with multiple instruments.
+    The KernelManager must be pre-configured; only the step method is called within the simulation.
     """
 
     class InstrumentSimulationState:
         def __init__(self, instrument: BaseInstrument, current_et: float):
             self.success_collections, self.failed_collections = Sessions.prepare_simulation_collections(instrument.name)
-            self.positive_sensing_batch, self.failed_computation_batch = [], []
+            self.positive_sensing_batch: List[Dict] = []
+            self.failed_computation_batch: List[Dict] = []
             self.heights = DynamicMaxBuffer(DYNAMIC_MAX_BUFFER_HEIGHT_SIZE)
             self.fov_widths = DynamicMaxBuffer(DYNAMIC_MAX_BUFFER_FOV_WIDTH_SIZE)
             self.heights_counter: int = DYNAMIC_MAX_BUFFER_HEIGHT_SIZE
@@ -110,9 +108,9 @@ class RemoteSensingSimulator:
                 self.fov_widths.add(instrument._fov_width)
 
         def dump_status_lines(self) -> List[str]:
-            name = self.success_collections.name[:22]  # 22 chars + 2 for padding
+            name = self.success_collections.name[:22]
             return [
-                f"{name:^24}",  # Centered within 24
+                f"{name:^24}",
                 f"✅ {len(self.positive_sensing_batch):>4} | T {self.total_success:<5}".ljust(24),
                 f"❌ {len(self.failed_computation_batch):>4} | T {self.total_failed:<5}".ljust(24),
                 f"📏 Max Height: {self.heights.maximum:>7.2f}".ljust(24),
@@ -131,7 +129,6 @@ class RemoteSensingSimulator:
             }
 
     class SimulationState:
-
         def __init__(self, kernel_manager: BaseKernelManager):
             self.kernel_manager = kernel_manager
             self.simulation_timekeeper = timedelta(seconds=0)
@@ -139,16 +136,15 @@ class RemoteSensingSimulator:
             self.max_speed_counter = 0
 
         def _setup_time(self, time_obj: Time):
-            """Setup or reset the simulation timing"""
-            # initialize the simulation state
+            """Initialize the simulation timing. Can be used for reset too."""
             self.current_simulation_step = 0
-            self.current_simulation_timestamp_et = spice.str2et(time.utc.iso)
+            self.current_simulation_timestamp_et = spice.str2et(time_obj.utc.iso)
             self.current_simulation_timestamp = time_obj
             self.kernel_manager.step(time_obj)
             self.real_time = time.time()
 
         def _time_step(self, dt: TimeDelta):
-            """Perform a single step the simulation itself"""
+            """Advance the simulation by dt."""
             self.current_simulation_timestamp += dt
             self.simulation_timekeeper += timedelta(seconds=dt.sec)
             self.current_simulation_timestamp_et = spice.str2et(self.current_simulation_timestamp.utc.iso)
@@ -161,13 +157,14 @@ class RemoteSensingSimulator:
         self.kernel_manager = kernel_manager
         self._computation_timedelta = SIMULATION_STEP
         self.threads: List[Thread] = []
-        if len(set([instrument.satellite_name for instrument in self.instruments])) == 1:
+        # Ensure all instruments are from the same satellite.
+        if len({instrument.satellite_name for instrument in self.instruments}) != 1:
             raise ValueError(
-                f"All instruments have to be from the same satellite, but got {[instrument.satellite_name for instrument in self.instruments]}"
+                f"All instruments must be from the same satellite, but got {[instrument.satellite_name for instrument in self.instruments]}"
             )
 
     @property
-    def computation_timedelta(self):
+    def computation_timedelta(self) -> TimeDelta:
         return TimeDelta(self._computation_timedelta, format="sec")
 
     @staticmethod
@@ -175,18 +172,17 @@ class RemoteSensingSimulator:
         total = int(td.total_seconds())
         return f"{total // 3600:02}:{(total % 3600) // 60:02}:{total % 60:02}"
 
-    def check_threads(self, threads):
-        # Iterate in reverse to safely pop from list.
+    def check_threads(self):
+        # Iterate in reverse to safely pop finished threads.
         for thread_id in range(len(self.threads) - 1, -1, -1):
-            if threads[thread_id] is None:
+            if self.threads[thread_id] is None:
                 self.threads.pop(thread_id)
 
-            elif not threads[thread_id].is_alive():
+            elif not self.threads[thread_id].is_alive():
                 self.threads[thread_id].join()
-                self.threads.pop(thread_id)
 
     def _simulation_step(self):
-        # Early rejection based on spacecraft position
+        # Early rejection based on spacecraft position.
         if self.simulation_state.max_speed_counter == 0:
             self.simulation_state.max_speed_counter = DYNAMIC_MAX_BUFFER_SPACECRAFT_VELOCITY_UPDATE_RATE
             spacecraft_position, spacecraft_velocity = self.instruments[0].calculate_spacecraft_position_and_velocity(
@@ -200,41 +196,36 @@ class RemoteSensingSimulator:
             self.simulation_state.max_speed_counter -= 1
 
         rank = self.filter.rank_point(spacecraft_position)
-        distances_to_tresholds = []
+        distances_to_thresholds = []
         for instrument in self.instruments:
             instrument_state = self.instrument_simulation_states[instrument.name]
-
-            # Check for fast dismissal with spacecraft position
             distance = rank - (
                 instrument_state.heights.maximum + instrument_state.fov_widths.maximum + self.filter.hard_radius
             )
             if distance > 0:
-                distances_to_tresholds.append(distance)
+                distances_to_thresholds.append(distance)
                 continue
 
             try:
-                # Went through screening, now actually compute the state
                 projection: ProjectionPoint = instrument.project_boresight(
                     self.simulation_state.current_simulation_timestamp_et
                 )
-                # Check how close is the closest point
                 rank = self.filter.rank_point(projection.projection)
                 distance = rank - (self.filter.hard_radius + instrument_state.fov_widths.maximum) * TOLERANCE_MARGIN
-                # Check if the projection is within the FOV
                 if distance <= 0:
-                    # Add to the batch
-                    datetime_current_timestamp = self.current_simulation_timestamp.to_datetime()
+                    # Use simulation state's current timestamp.
+                    datetime_current_timestamp = self.simulation_state.current_simulation_timestamp.to_datetime()
                     instrument_state.positive_sensing_batch.append(
                         {
                             "et": self.simulation_state.current_simulation_timestamp_et,
+                            "astropy_utc": self.simulation_state.current_simulation_timestamp.utc.iso,
                             "timestamp_utc": datetime_current_timestamp,
                             "distance": distance,
                             "boresight": projection.projection.tolist(),
                             "meta": {
-                                "astropy_offset": (
-                                    self.simulation_state.current_simulation_timestamp
-                                    - Time(datetime_current_timestamp, scale="utc")
-                                ).sec,
+                                "min_loaded_time": self.kernel_manager.min_loaded_time.utc.iso,
+                                "max_loaded_time": self.kernel_manager.max_loaded_time.utc.iso,
+                                "simulation_start": self.start_time.utc.iso,
                                 "satellite_position": spacecraft_position.tolist(),
                                 "filter_name": self.filter.name,
                                 "fov_width": instrument_state.fov_widths.maximum,
@@ -243,24 +234,21 @@ class RemoteSensingSimulator:
                         }
                     )
                     instrument_state.total_success += 1
-                # If projection is outside of the FOV, we can prolong the step to skip large lunar swaths of no interest
-                # With computed satellite speed and distance needed to reach the closest treshold (we use lower bound, so just fov width and hard treshold is used)
                 else:
-                    distances_to_tresholds.append(distance)
-
+                    distances_to_thresholds.append(distance)
             except Exception as e:
-                # We have an error, possibly global in spice, so let's not sabotage the whole sim.
                 log_spice_exception(e, f"Error calculating projection for {instrument.name}")
-                datetime_current_timestamp = self.current_simulation_timestamp.to_datetime()
+                datetime_current_timestamp = self.simulation_state.current_simulation_timestamp.to_datetime()
                 instrument_state.failed_computation_batch.append(
                     {
-                        "et": self.current_simulation_timestamp_et,
+                        "et": self.simulation_state.current_simulation_timestamp_et,
                         "timestamp_utc": datetime_current_timestamp,
+                        "astropy_utc": self.simulation_state.current_simulation_timestamp.utc.iso,
                         "error": str(e),
                         "meta": {
-                            "astropy_offset": (
-                                self.current_simulation_timestamp - Time(datetime_current_timestamp, scale="utc")
-                            ).sec,
+                            "min_loaded_time": self.kernel_manager.min_loaded_time.utc.iso,
+                            "max_loaded_time": self.kernel_manager.max_loaded_time.utc.iso,
+                            "simulation_start": self.start_time.utc.iso,
                             "satellite_position": spacecraft_position.tolist(),
                             "filter_name": self.filter.name,
                         },
@@ -269,21 +257,21 @@ class RemoteSensingSimulator:
                 instrument_state.total_failed += 1
                 continue
 
-            # Update dynamic buffers periodically
+            # Update dynamic buffers.
             instrument_state.heights_counter -= 1
             instrument_state.fov_widths_counter -= 1
-
             if instrument_state.heights_counter == 0:
                 try:
                     instrument_state.heights.add(np.linalg.norm(projection.spacecraft_relative))
                 except Exception as e:
                     log_spice_exception(e, f"Updating height for {instrument.name}")
                 instrument_state.heights_counter = DYNAMIC_MAX_BUFFER_HEIGHT_UPDATE_RATE
-
             if instrument_state.fov_widths_counter == 0:
                 try:
                     instrument_state.fov_widths.add(
-                        instrument.recalculate_bounds_to_boresight_distance(self.current_simulation_timestamp_et)
+                        instrument.recalculate_bounds_to_boresight_distance(
+                            self.simulation_state.current_simulation_timestamp_et
+                        )
                     )
                 except Exception as e:
                     log_spice_exception(e, f"Updating FOV for {instrument.name}")
@@ -292,9 +280,8 @@ class RemoteSensingSimulator:
     def _simulation_step_housekeeping(
         self, pbar, interactive_progress: bool = True, current_task: Optional[Task] = None
     ):
-        # Simulation maintnance, have to be always executed! We keep astropy time and datetime. Astropy for simulation, datetime for output
+        # Advance simulation time.
         self.simulation_state._time_step(self.computation_timedelta)
-
         # Periodically dump the state of simulation
         if time.time() - self.simulation_state.real_time > SIM_STATE_DUMP_INTERVAL:
             if interactive_progress:
@@ -307,7 +294,6 @@ class RemoteSensingSimulator:
                     + f"\n🚀  Locally max spacecraft speed: {self.simulation_state.max_speed.maximum:.2f} km/s\n"
                 )
                 state_string = state_string_prefix + state_string
-                # No conditional print here, we actually care about this and it's not being spammed + frequency of output could be adjusted
                 tqdm.write(state_string)
                 if current_task is not None:
                     state = {
@@ -320,11 +306,10 @@ class RemoteSensingSimulator:
                         meta={
                             "state": state,
                             "progress [%]": 100
-                            * self.simulation_state.simulation_timekeeper
-                            / self.simulation_duration,
+                            * self.simulation_state.simulation_timekeeper.total_seconds()
+                            / self.simulation_duration.total_seconds(),
                         },
                     )
-
             self.simulation_state.real_time = time.time()
 
         if interactive_progress:
@@ -334,9 +319,8 @@ class RemoteSensingSimulator:
                 f"Simulated time: {RemoteSensingSimulator.format_td(self.simulation_state.simulation_timekeeper)} / {self.simulation_duration_formatted}"
             )
 
-        # Push data to the database
+        # Flush data to the database.
         for instrument in self.instruments:
-
             instrument_state = self.instrument_simulation_states[instrument.name]
             if len(instrument_state.positive_sensing_batch) >= MONGO_PUSH_BATCH_SIZE:
                 thread = Sessions.start_background_batch_insert(
@@ -345,7 +329,6 @@ class RemoteSensingSimulator:
                 self.threads.append(thread)
                 instrument_state.positive_sensing_batch = []
                 self.check_threads()
-
             if len(instrument_state.failed_computation_batch) >= MONGO_PUSH_BATCH_SIZE:
                 thread = Sessions.start_background_batch_insert(
                     instrument_state.failed_computation_batch, instrument_state.failed_collections
@@ -362,7 +345,6 @@ class RemoteSensingSimulator:
         current_task: Optional[Task] = None,
     ):
         """
-        Start the simulation for the given time interval.
         :param start_time: Start time of the simulation
         :param end_time: End time of the simulation
         :param interactive_progress: Whether to show the progress bar, if false, just dump progress and logs
@@ -371,14 +353,15 @@ class RemoteSensingSimulator:
         # Use kernel manager's loaded times if not provided.
         self.start_time = self.kernel_manager.min_loaded_time if start_time is None else start_time
         self.end_time = self.kernel_manager.max_loaded_time if end_time is None else end_time
-        self.simulation_duration = timedelta(seconds=(end_time - start_time).sec)
+        self.simulation_duration = timedelta(seconds=(self.end_time - self.start_time).sec)
         self.simulation_duration_formatted = RemoteSensingSimulator.format_td(self.simulation_duration)
         self.total_seconds = self.simulation_duration.sec
 
-        # Initialize simulation state with kernel_manager.
+        # Initialize simulation state.
         self.simulation_state = self.SimulationState(self.kernel_manager)
-        self.simulation_state._setup_time(start_time)
+        self.simulation_state._setup_time(self.start_time)
 
+        # Initialize instrument simulation states using current ET.
         self.instrument_simulation_states = {
             instrument.name: self.InstrumentSimulationState(
                 instrument, self.simulation_state.current_simulation_timestamp_et
@@ -388,32 +371,29 @@ class RemoteSensingSimulator:
 
         pbar = tqdm(total=self.total_seconds, unit="s", disable=SUPRESS_TQDM) if interactive_progress else nullcontext()
 
-        # backup code in ~/Desktop/sim_backup.py
         with pbar:
-            while self.current_simulation_timestamp < end_time:
+            while self.simulation_state.current_simulation_timestamp < self.end_time:
                 try:
                     self._simulation_step()
                 except Exception as e:
                     log_spice_exception(e, "Error during simulation step")
-
                 finally:
                     self._simulation_step_housekeeping(pbar, interactive_progress, current_task)
 
-        # Final push to the database
+        # Final flush to the database.
         for instrument in self.instruments:
             instrument_state = self.instrument_simulation_states[instrument.name]
-            if len(instrument_state.positive_sensing_batch) > 0:
+            if instrument_state.positive_sensing_batch:
                 thread = Sessions.start_background_batch_insert(
                     instrument_state.positive_sensing_batch, instrument_state.success_collections
                 )
                 self.threads.append(thread)
-
-            if len(instrument_state.failed_computation_batch) > 0:
+            if instrument_state.failed_computation_batch:
                 thread = Sessions.start_background_batch_insert(
                     instrument_state.failed_computation_batch, instrument_state.failed_collections
                 )
                 self.threads.append(thread)
 
-        # Since we want to kill all threads when the main thread exits, let's await them just to be sure!
+        # Await all threads.
         for thread in self.threads:
             thread.join()
