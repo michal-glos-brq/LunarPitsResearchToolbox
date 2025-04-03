@@ -32,6 +32,8 @@ KERNEL_LOCK_POLL_INTERVAL = 1
 ### Some SpiceyPy constants
 SPICE_FOLDER = os.path.join(HDD_BASE_PATH, "SPICE")
 SPICE_PERSIST = True
+# Fetch all kernels upon instantiation. If False, fetch upon request
+SPICE_PRELOAD = True
 
 KERNEL_TIME_KEYS = {"filename_key": "^SPICE_KERNEL", "time_start_key": "START_TIME", "time_stop_key": "STOP_TIME"}
 SECOND_TIMEDELTA = TimeDelta(1, format="sec")

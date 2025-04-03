@@ -1,19 +1,59 @@
 """
 ====================================================
-Lunar SPICE Kernel Manager
+Lunar SPICE Kernel Management System
 ====================================================
 
-Author: Michal Glos
-University: Brno University of Technology (VUT)
-Faculty: Faculty of Electrical Engineering and Communication (FEKT)
-Diploma Thesis Project
+Author: Michal Glos  
+Institution: Brno University of Technology (VUT)  
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)  
+Project: Diploma Thesis – Space Applications
 
-Description:
-------------
-This module provides a structured management system for SPICE kernels
-related to lunar exploration. It facilitates the loading, unloading,
-and organization of static and dynamic kernels for precise orbital
-calculations and planetary data processing.
+Overview:
+---------
+This module implements a modular and extensible kernel management system
+for the SPICE toolkit, focusing on lunar missions such as LRO and GRAIL.
+It provides structured handling of both static and dynamic kernels, 
+with support for:
+
+  • Lunar reference frames (MOON_ME, MOON_PA_DE440)
+  • Detailed vs. low-resolution DSK surface models
+  • Time-windowed dynamic kernel loading
+  • Automatic metadata management and kernel reuse
+  • Kernel preloading, on-demand loading, and persistence control
+
+Architecture:
+-------------
+The core design follows a mixin-based composition, enabling flexible 
+reusability across different mission configurations. Each mission or
+dataset (e.g., LRO, GRAIL) provides its own mixin that augments the 
+base `BaseKernelManager` with appropriate static and dynamic kernels.
+
+Classes:
+--------
+• BaseKernelManager:
+    Core SPICE loader/unloader with time-bound control.
+    
+• LunarKernelManagerMixin:
+    Adds universal lunar kernels and configurable DSK model support.
+    
+• LROKernelManagerMixin:
+    Adds LRO spacecraft-specific instrument, frame, and CK/SPK kernels.
+
+• GRAILKernelManagerMixin:
+    Adds GRAIL mission-specific dual-satellite dynamic trajectory and CK data.
+
+Usage:
+------
+Each final kernel manager class (e.g., `LROKernelManager`) inherits from 
+the base and appropriate mixins, and can be instantiated with various 
+options for dynamic kernel filtering, detailed surface models, and 
+activation time windows.
+
+SPICE Toolkit:
+--------------
+This module is designed to be compatible with `spiceypy` and uses 
+NAIF-standard kernels fetched from public and local repositories.
+
 """
 
 from abc import ABC
@@ -21,11 +61,11 @@ from typing import List, Literal
 from collections import OrderedDict
 
 from astropy.time import Time
-import spiceypy as spice
 
 from src.SPICE.config import (
     TIF_SAMPLE_RATE,
     SPICE_PERSIST,
+    SPICE_PRELOAD,
     root_path,
     grail_path,
     lro_path,
@@ -56,7 +96,7 @@ class BaseKernelManager(ABC):
     keys = ["lsk", "sclk", "pck", "fk", "bpck", "ik", "ck", "spk", "dsk"]
 
     def __init__(self, min_required_time: Time = None, max_required_time: Time = None):
-        # In case we want only partial coverage
+        # In case we want only partial coverage, have it universally accesible
         self.min_required_time = min_required_time
         self.max_required_time = max_required_time
 
@@ -115,19 +155,16 @@ class BaseKernelManager(ABC):
             raise ValueError("Some of dynamic SPICE kernels were not loaded for required time")
 
 
-class LunarKernelManager(BaseKernelManager):
+class LunarKernelManagerMixin:
     # spice.furnsh(LUNAR_MODEL["dsk_path"])
-    def __init__(
+    def setup_lunar_kernels(
         self,
         frame: Literal["MOON_ME", "MOON_PA_DE440"] = LUNAR_FRAME,
-        detailed: bool = False,
-        min_required_time: Time = None,
-        max_required_time: Time = None,
+        detailed: bool = False
     ):
         """
         You can choose the lunar frame with frame and DSK model - more detailed have to be compiled locally
         """
-        super().__init__(min_required_time=min_required_time, max_required_time=max_required_time)
         self.main_reference_frame = frame
         # Following two kernels are universal and always needed
         self.static_kernels["bpck"].append(
@@ -169,15 +206,13 @@ class LunarKernelManager(BaseKernelManager):
             )
 
 
-class LROKernelManager(LunarKernelManager):
-    def __init__(
+class LROKernelManagerMixin:
+    def setup_lro_kernels(
         self,
-        frame: Literal["MOON_ME", "MOON_PA_DE440"] = LUNAR_FRAME,
-        detailed: bool = False,
         pre_download_kernels: bool = True,
         diviner_ck: bool = False,
         lroc_ck: bool = False,
-        keep_dynamic_kernels: bool = True,
+        keep_dynamic_kernels: bool = SPICE_PERSIST,
         min_required_time: Time = None,
         max_required_time: Time = None,
     ):
@@ -192,9 +227,6 @@ class LROKernelManager(LunarKernelManager):
             lroc_ck (bool, optional): Use LROC CK kernels. Defaults to False.
             keep_dynamic_kernels (bool, optional): Do not delete dynamic kernels once unloaded. Defaults to True.
         """
-        super().__init__(
-            frame=frame, detailed=detailed, min_required_time=min_required_time, max_required_time=max_required_time
-        )
         # Spacecraft clock
         self.static_kernels["sclk"].append(AutoUpdateKernel(lro_url("sclk/"), lro_path("sclk"), r"lro_clkcor.*.tsc"))
         self.static_kernels["fk"] += [
@@ -275,20 +307,15 @@ class LROKernelManager(LunarKernelManager):
             )
 
 
-class GRAILKernelManager(LunarKernelManager):
+class GRAILKernelManagerMixin:
 
-    def __init__(
+    def setup_grail_kernels(
         self,
-        frame: Literal["MOON_ME", "MOON_PA_DE440"] = LUNAR_FRAME,
-        detailed: bool = False,
         pre_download_kernels: bool = True,
-        keep_dynamic_kernels: bool = True,
+        keep_dynamic_kernels: bool = SPICE_PERSIST,
         min_required_time: Time = None,
         max_required_time: Time = None,
     ):
-        super().__init__(
-            frame=frame, detailed=detailed, min_required_time=min_required_time, max_required_time=max_required_time
-        )
         # Spacecraft clock
         self.static_kernels["sclk"].append(
             AutoUpdateKernel(grail_url("sclk/"), grail_path("sclk"), r"grb_sclkscet.*.tsc")
@@ -348,3 +375,67 @@ class GRAILKernelManager(LunarKernelManager):
                 ]
             ),
         ]
+
+
+class LunarKernelManager(BaseKernelManager, LunarKernelManagerMixin):
+    def __init__(
+        self,
+        frame: Literal["MOON_ME", "MOON_PA_DE440"] = LUNAR_FRAME,
+        detailed: bool = False,
+        min_required_time: Time = None,
+        max_required_time: Time = None,
+        pre_load_static_kernels: bool = SPICE_PRELOAD,
+    ):
+        super().__init__(min_required_time=min_required_time, max_required_time=max_required_time)
+        self.setup_lunar_kernels(frame=frame, detailed=detailed, min_required_time=min_required_time, max_required_time=max_required_time)
+        if pre_load_static_kernels:
+            self.load_static_kernels()
+
+class LROKernelManager(BaseKernelManager, LunarKernelManagerMixin, LROKernelManagerMixin):
+    def __init__(
+        self,
+        frame: Literal["MOON_ME", "MOON_PA_DE440"] = LUNAR_FRAME,
+        detailed: bool = False,
+        pre_download_kernels: bool = SPICE_PRELOAD,
+        pre_load_static_kernels: bool = SPICE_PRELOAD,
+        diviner_ck: bool = False,
+        lroc_ck: bool = False,
+        keep_dynamic_kernels: bool = SPICE_PERSIST,
+        min_required_time: Time = None,
+        max_required_time: Time = None,
+    ):
+        super().__init__(min_required_time=min_required_time, max_required_time=max_required_time)
+        self.setup_lunar_kernels(frame=frame, detailed=detailed)
+        self.setup_lro_kernels(
+            pre_download_kernels=pre_download_kernels,
+            diviner_ck=diviner_ck,
+            lroc_ck=lroc_ck,
+            keep_dynamic_kernels=keep_dynamic_kernels,
+            min_required_time=min_required_time,
+            max_required_time=max_required_time,
+        )
+        if pre_load_static_kernels:
+            self.load_static_kernels()
+
+class GRAILKernelManager(LunarKernelManager):
+
+    def __init__(
+        self,
+        frame: Literal["MOON_ME", "MOON_PA_DE440"] = LUNAR_FRAME,
+        detailed: bool = False,
+        pre_download_kernels: bool = True,
+        keep_dynamic_kernels: bool = SPICE_PERSIST,
+        pre_load_static_kernels: bool = SPICE_PRELOAD,
+        min_required_time: Time = None,
+        max_required_time: Time = None,
+    ):
+        super().__init__(min_required_time=min_required_time, max_required_time=max_required_time)
+        self.setup_lunar_kernels(frame=frame, detailed=detailed)
+        self.setup_grail_kernels(
+            pre_download_kernels=pre_download_kernels,
+            keep_dynamic_kernels=keep_dynamic_kernels,
+            min_required_time=min_required_time,
+            max_required_time=max_required_time,
+        )
+        if pre_load_static_kernels:
+            self.load_static_kernels()
