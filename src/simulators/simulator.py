@@ -1,9 +1,10 @@
+import uuid
 import time
 import logging
 from contextlib import nullcontext
 from typing import Optional, List, Dict
 from datetime import timedelta
-from dataclasses import dataclass
+from bson import ObjectId
 
 import numpy as np
 from celery import Task
@@ -218,16 +219,12 @@ class RemoteSensingSimulator:
                     instrument_state.positive_sensing_batch.append(
                         {
                             "et": self.simulation_state.current_simulation_timestamp_et,
-                            "astropy_utc": self.simulation_state.current_simulation_timestamp.utc.iso,
                             "timestamp_utc": datetime_current_timestamp,
                             "distance": distance,
                             "boresight": projection.projection.tolist(),
                             "meta": {
-                                "min_loaded_time": self.kernel_manager.min_loaded_time.utc.iso,
-                                "max_loaded_time": self.kernel_manager.max_loaded_time.utc.iso,
-                                "simulation_start": self.start_time.utc.iso,
+                                "simulation_id": self.simulation_metadata_id,
                                 "satellite_position": spacecraft_position.tolist(),
-                                "filter_name": self.filter.name,
                                 "fov_width": instrument_state.fov_widths.maximum,
                                 "height": instrument_state.heights.maximum,
                             },
@@ -243,14 +240,10 @@ class RemoteSensingSimulator:
                     {
                         "et": self.simulation_state.current_simulation_timestamp_et,
                         "timestamp_utc": datetime_current_timestamp,
-                        "astropy_utc": self.simulation_state.current_simulation_timestamp.utc.iso,
                         "error": str(e),
                         "meta": {
-                            "min_loaded_time": self.kernel_manager.min_loaded_time.utc.iso,
-                            "max_loaded_time": self.kernel_manager.max_loaded_time.utc.iso,
-                            "simulation_start": self.start_time.utc.iso,
+                            "simulation_id": self.simulation_metadata_id,
                             "satellite_position": spacecraft_position.tolist(),
-                            "filter_name": self.filter.name,
                         },
                     }
                 )
@@ -310,7 +303,14 @@ class RemoteSensingSimulator:
                             / self.simulation_duration.total_seconds(),
                         },
                     )
+
+            update_thread = Sessions.start_background_update_simulation_metadata(
+                self.simulation_metadata_id,
+                self.simulation_state.current_simulation_timestamp.utc.iso,
+            )
+            self.threads.append(update_thread)
             self.simulation_state.real_time = time.time()
+
 
         if interactive_progress:
             pbar.update(self.computation_timedelta.sec)
@@ -337,12 +337,32 @@ class RemoteSensingSimulator:
                 instrument_state.failed_computation_batch = []
                 self.check_threads()
 
+    def create_metadata_record(self):
+        self.simulation_metadata_id = ObjectId()
+        simulation_metadata = {
+            "_id": self.simulation_metadata_id,  # Explicit ID
+            "simulation_name": self.simulation_name,
+            "simulation_id": self.simulation_id,
+            "start_time": self.start_time.utc.iso,
+            "end_time": self.end_time.utc.iso,
+            "last_logged_time": self.simulation_state.current_simulation_timestamp.utc.iso,
+            "kernel_manager_min_time": self.kernel_manager.min_loaded_time.utc.iso if self.kernel_manager.min_loaded_time else None,
+            "kernel_manager_max_time": self.kernel_manager.max_loaded_time.utc.iso if self.kernel_manager.max_loaded_time else None,
+            "instruments": [instrument.name for instrument in self.instruments],
+            "filter_name": self.filter.name,
+            "frame": self.kernel_manager.main_reference_frame,
+            "created_at": Time.now().utc.iso,
+            "finished": False,
+        }
+        Sessions.insert_simulation_metadata(simulation_metadata)
+
     def start_simulation(
         self,
         start_time: Optional[Time] = None,
         end_time: Optional[Time] = None,
         interactive_progress: bool = True,
         current_task: Optional[Task] = None,
+        simulation_name: Optional[str] = None,
     ):
         """
         :param start_time: Start time of the simulation
@@ -356,6 +376,8 @@ class RemoteSensingSimulator:
         self.simulation_duration = timedelta(seconds=(self.end_time - self.start_time).sec)
         self.simulation_duration_formatted = RemoteSensingSimulator.format_td(self.simulation_duration)
         self.total_seconds = self.simulation_duration.total_seconds()
+        self.simulation_name = simulation_name
+        self.simulation_id = str(uuid.uuid4())
 
         # Initialize simulation state.
         self.simulation_state = self.SimulationState(self.kernel_manager)
@@ -370,6 +392,9 @@ class RemoteSensingSimulator:
         }
 
         pbar = tqdm(total=self.total_seconds, unit="s", disable=SUPRESS_TQDM) if interactive_progress else nullcontext()
+
+        # Log the simulation state into Mongo
+        self.create_metadata_record()
 
         with pbar:
             while self.simulation_state.current_simulation_timestamp < self.end_time:
@@ -393,6 +418,15 @@ class RemoteSensingSimulator:
                     instrument_state.failed_computation_batch, instrument_state.failed_collections
                 )
                 self.threads.append(thread)
+
+        
+
+        update_thread = Sessions.start_background_update_simulation_metadata(
+            self.simulation_metadata_id,
+            self.simulation_state.current_simulation_timestamp.utc.iso,
+            finished=True,
+        )
+        self.threads.append(update_thread)
 
         # Await all threads.
         for thread in self.threads:

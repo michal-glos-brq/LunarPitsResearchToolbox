@@ -23,5 +23,7 @@ IMG_BASE_FOLDER = os.path.join(HDD_BASE_PATH, "MONGO", "PITS_IMAGES")
 SIMULATION_DB_NAME = "astro-simulation"
 SIMULATION_POINTS_COLLECTION = "simulation_points"
 
+SIMULATION_METADATA_COLLECTION = "simulation_metadata"
+
 RDR_DIVINER_DB = "rdr_diviner"
 RDR_DIVINER_COLLECTION = "rdr_diviner_filtered" # Here, surely the querried area have to be added as a suffix

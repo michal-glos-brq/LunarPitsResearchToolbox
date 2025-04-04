@@ -5,7 +5,6 @@ It's purpose is to extract all DB work into this file
 A lot of redundant and overly-specific  use cases to general use case functionalities are implemented - refactoring needed.
 """
 
-
 from typing import List
 import time
 import threading
@@ -18,19 +17,20 @@ from src.db.config import (
     PIT_DETAIL_COLLECTION_NAME,
     PIT_ATLAS_IMAGE_COLLECTION_NAME,
     SIMULATION_DB_NAME,
+    SIMULATION_METADATA_COLLECTION,
 )
 
 
 class Sessions:
     """
     MongoDB session manager for simulation results and lunar pit atlas data.
-    
+
     This class provides a centralized interface to:
       - Access MongoDB databases for parsed and raw lunar pit data (pits, pit details, images).
       - Fetch all parsed lunar pit locations as a Pandas DataFrame (with caching).
       - Initialize and manage timeseries collections for simulation results (positive and failed).
       - Perform threaded, batched inserts of simulation results into MongoDB with retry logic.
-    
+
     Notes:
       - Simulation collections use MongoDB's timeseries format, with `timestamp_utc` as the time field
         and `meta` as the metadata field.
@@ -43,7 +43,6 @@ class Sessions:
     lunar_pit_locations = None
     # It will eventually go thoutgh ...
     max_retries = 100
-
 
     def __init__(self):
         """
@@ -91,7 +90,7 @@ class Sessions:
             {
                 "name": item["name"],
                 "latitude": item["location"]["coordinates"][1],
-                "longitude": item["location"]["coordinates"][0]
+                "longitude": item["location"]["coordinates"][0],
             }
             for item in query_results
         ]
@@ -120,8 +119,8 @@ class Sessions:
                     timeseries={
                         "timeField": "timestamp_utc",  # Ephemeris time as float
                         "metaField": "meta",  # Optional metadata
-                        "granularity": "seconds"  # Adjust based on data density
-                    }
+                        "granularity": "seconds",  # Adjust based on data density
+                    },
                 )
             except errors.CollectionInvalid:
                 pass  # Collection already exists
@@ -140,8 +139,8 @@ class Sessions:
                     timeseries={
                         "timeField": "timestamp_utc",  # Ephemeris time as float
                         "metaField": "meta",  # Optional metadata
-                        "granularity": "seconds"  # Adjust based on data density
-                    }
+                        "granularity": "seconds",  # Adjust based on data density
+                    },
                 )
             except errors.CollectionInvalid:
                 pass
@@ -150,7 +149,6 @@ class Sessions:
         failed_collection.create_index("et")  # Queries by time range
 
         return positive_collection, failed_collection
-
 
     @staticmethod
     def start_background_batch_insert(results: List[dict], collection):
@@ -185,7 +183,6 @@ class Sessions:
                 wait_time *= 1.2
                 time.sleep(wait_time)
 
-
     @staticmethod
     def get_lunar_pit_collections(db_name=PIT_ATLAS_DB_NAME):
         """
@@ -201,3 +198,30 @@ class Sessions:
             session[PIT_DETAIL_COLLECTION_NAME],
             session[PIT_ATLAS_IMAGE_COLLECTION_NAME],
         )
+
+    @staticmethod
+    def insert_simulation_metadata(metadata: dict):
+        """
+        Returns the simulation metadata collection.
+        """
+        session = Sessions.get_db_session(SIMULATION_DB_NAME)
+        session[SIMULATION_METADATA_COLLECTION].insert_one(metadata)
+
+    @staticmethod
+    def update_simulation_metadata(metadata_id, current_time_iso, finished=None):
+        update_fields = {"last_logged_time": current_time_iso}
+        if finished is not None:
+            update_fields["finished"] = finished
+        Sessions.simulation_metadata_collection().update_one({"_id": metadata_id}, {"$set": update_fields})
+
+    @staticmethod
+    def start_background_update_simulation_metadata(metadata_id, current_time_iso, finished=None):
+        """
+        Spawns a background thread to update the simulation metadata document.
+        """
+        thread = threading.Thread(
+            target=Sessions.update_simulation_metadata, args=(metadata_id, current_time_iso, finished)
+        )
+        thread.daemon = True
+        thread.start()
+        return thread

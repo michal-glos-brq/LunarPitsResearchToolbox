@@ -1,6 +1,6 @@
 from astropy.time import Time, TimeDelta
 import logging
-
+from typing import Optional
 
 from src.celery.app import app
 from src.SPICE.kernel_utils.kernel_management import LROKernelManager, GRAILKernelManager
@@ -45,6 +45,7 @@ def run_remote_sensing_simulation(
     filter_type: str,
     kernel_manager_kwargs: dict,
     filter_kwargs: dict,
+    simulation_name: Optional[str] = None,
     **kwargs,
 ) -> dict:
     """
@@ -98,6 +99,7 @@ def run_remote_sensing_simulation(
     kernel_manager_kwargs.setdefault("min_required_time", start_time - TimeDelta(10, format="sec"))
     kernel_manager_kwargs.setdefault("max_required_time", end_time + TimeDelta(10, format="sec"))
     kernel_manager_kwargs.setdefault("keep_dynamic_kernels", keep_dynamic_kernels)
+    kernel_manager_kwargs.setdefault("simulation_name", simulation_name)
 
     ### Instantiating and prepare required objects
     kernel_manager = KERNEL_MANAGER_MAP[kernel_manager_type](**kernel_manager_kwargs)
