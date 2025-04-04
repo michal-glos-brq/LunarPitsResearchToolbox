@@ -1,7 +1,8 @@
 
 
 # This is DIVINER sampling rate and poses as a reasonable base timestep for the simulation
-SIMULATION_STEP = 1.024
+#SIMULATION_STEP = 1.024
+SIMULATION_STEP = 1.024 * 3600 # Testing purposes - whether it can run full sim and not crash
 
 # To be really inclusive, treshold is multiplied by this values
 TOLERANCE_MARGIN = 1.1

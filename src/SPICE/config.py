@@ -13,7 +13,8 @@ from src.global_config import HDD_BASE_PATH
 
 
 ### Limit concurrent kernel downloads
-MAX_KERNEL_DOWNLOADS = 12
+MAX_KERNEL_DOWNLOADS = 12 # For one worker/process, no system level orchestration
+KERNEL_PREFETCH_COUNT = 3
 MAX_LOADED_DYNAMIC_KERNELS = 3
 KEEP_DYNAMIC_KERNELS = False
 

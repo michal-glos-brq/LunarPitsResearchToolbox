@@ -48,6 +48,7 @@ import uuid
 import errno
 import asyncio
 import aiohttp
+import threading
 import aiofiles
 import aiofiles.os
 from abc import ABC, abstractmethod
@@ -74,6 +75,7 @@ from src.SPICE.config import (
     SPICE_KERNEL_LOCK_TIMEOUT,
     KERNEL_LOCK_POLL_INTERVAL,
     SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT,
+    KERNEL_PREFETCH_COUNT,
 )
 
 logger = logging.getLogger(__name__)
@@ -689,6 +691,7 @@ class DynamicKernelManager(ABC):
         regex: str,
         keep_kernels: bool = True,
         pre_download_kernels: bool = True,
+        frefetch_kernels: int = KERNEL_PREFETCH_COUNT,
         min_time_to_load: Optional[Time] = None,
         max_time_to_load: Optional[Time] = None,
     ):
@@ -699,12 +702,14 @@ class DynamicKernelManager(ABC):
         keep_kernels: if True, downloaded files are stored on disk. If false, once data are unloaded,
                     corresponding files are deleted
         pre_download_kernels: if True, all kernels are downloaded at initialization (if not already on the disk)
+        frefetch_kernels: number of kernels to asynchronously prefetch
         min_time_to_load: minimum time to load the kernel, ditch kernels with max_time lower then this value
         max_time_to_load: maximum time to load the kernel, ditch kernels with min_time higher then this value
         """
         self.regex = re.compile(regex)
         self.base_url = base_url
         self.keep_kernels = keep_kernels
+        self.prefetch_kernels = frefetch_kernels
         self.path = path
         self.min_time_to_load = min_time_to_load
         self.max_time_to_load = max_time_to_load
@@ -717,6 +722,11 @@ class DynamicKernelManager(ABC):
 
         if pre_download_kernels:
             self.download_kernels()
+        elif self.prefetch_kernels > 0:
+            for kernel in self.kernel_pool[: self.prefetch_kernels]:
+                # Fire and forget thread to download data, concurrency is solved with file locks already
+                threading.Thread(target=kernel.ensure_downloaded, daemon=True).start()
+
 
     def apply_time_interval_kernel_filter(self) -> None:
         """
@@ -772,6 +782,11 @@ class DynamicKernelManager(ABC):
 
         _id points to kernel list
         """
+        # Fire and forget thread to download data, concurrency is solved with file locks already
+        if self.prefetch_kernels > 0:
+            for kernel in self.kernel_pool[_id+1:_id + self.prefetch_kernels]:
+                threading.Thread(target=kernel.ensure_downloaded, daemon=True).start()
+
         kernel = self.kernel_pool[_id]
         self.active_kernel_id = _id
         kernel.load()
