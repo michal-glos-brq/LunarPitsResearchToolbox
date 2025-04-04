@@ -355,7 +355,7 @@ class RemoteSensingSimulator:
         self.end_time = self.kernel_manager.max_loaded_time if end_time is None else end_time
         self.simulation_duration = timedelta(seconds=(self.end_time - self.start_time).sec)
         self.simulation_duration_formatted = RemoteSensingSimulator.format_td(self.simulation_duration)
-        self.total_seconds = self.simulation_duration.sec
+        self.total_seconds = self.simulation_duration.total_seconds()
 
         # Initialize simulation state.
         self.simulation_state = self.SimulationState(self.kernel_manager)

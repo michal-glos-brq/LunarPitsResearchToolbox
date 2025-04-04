@@ -32,6 +32,23 @@ services:
     depends_on:
       - redis
 
+  netdata:
+    image: netdata/netdata
+    container_name: Netdata
+    ports:
+      - "19999:19999"
+    pid: host
+    privileged: true
+    cap_add:
+      - SYS_PTRACE
+      - SYS_ADMIN
+    volumes:
+      - /etc/passwd:/host/etc/passwd:ro
+      - /etc/group:/host/etc/group:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
 volumes:
   redis_data:
     driver: local
