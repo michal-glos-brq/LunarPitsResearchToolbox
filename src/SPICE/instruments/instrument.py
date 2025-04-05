@@ -11,7 +11,7 @@ import spiceypy as spice
 
 from src.SPICE.instruments.subinstruments import SubInstrument
 from src.global_config import LUNAR_FRAME, LUNAR_FRAME
-from src.SPICE.config import ABBERRATION_CORRECTION, BOUNDS_TO_BORESIGHT_BUFFER_LEN
+from src.SPICE.config import ABBERRATION_CORRECTION
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -30,13 +30,11 @@ class BaseInstrument(ABC):
 
     STATIC_INSTRUMENT = False
     DYNAMIC_KERNEL_OFFSET_JD = 0
+    # Use arbitrary absurd default values, until it's possible to be computed
+    _fov_width = 10000
+    _height = 1000000
 
     def __init__(self):
-    # This should probably be bounds, but those are bounds for a single subinstrument
-        # self._bound = None
-        # self._bounds = None
-        # self._boresight = None
-
         # Static boresight - aggregated boresight in static frame, used for instruments with dynamic boresight relatively to the satellite
         self._static_boresight, self._static_boresight_frame = None, None
         self._static_bounds, self._static_bounds_frame = None, None

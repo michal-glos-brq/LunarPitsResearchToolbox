@@ -223,7 +223,7 @@ class BaseKernel:
     def ensure_downloaded(self) -> None:
         """Make sure the kernel is downloaded"""
         if not self.file_exists:
-            self._download_file(self.url, self.filename)
+            self.download_file(self.url, self.filename)
 
     async def async_ensure_downloaded(self) -> None:
         """Asynchronously download the kernel with a progress bar update"""
@@ -270,6 +270,8 @@ class BaseKernel:
 
     def download_file(self, url: str, filename: str) -> None:
         with FileLock(filename + ".tmp.lock", timeout=SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT):
+            if os.path.exists(filename):
+                return
             self._download_file(url, filename)
 
     ### Nesting crime scene start
@@ -282,7 +284,7 @@ class BaseKernel:
         temp_path = filename + ".tmp"
         headers = {"User-Agent": "Mozilla/5.0 (compatible; MyDownloader/1.0)"}
         corruption = False
-        
+
         while retries < MAX_RETRIES:
             try:
                 resume_pos = os.path.getsize(temp_path) if os.path.exists(temp_path) else 0
@@ -356,6 +358,8 @@ class BaseKernel:
 
     async def async_download_file(self, url: str, filename: str) -> None:
         with FileLock(filename + ".tmp.lock", timeout=SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT):
+            if os.path.exists(filename):
+                return
             await self._async_download_file(url, filename)
 
     async def _async_download_file(self, url: str, filename: str) -> None:
@@ -691,7 +695,7 @@ class DynamicKernelManager(ABC):
         regex: str,
         keep_kernels: bool = True,
         pre_download_kernels: bool = True,
-        frefetch_kernels: int = KERNEL_PREFETCH_COUNT,
+        prefetch_kernels: int = KERNEL_PREFETCH_COUNT,
         min_time_to_load: Optional[Time] = None,
         max_time_to_load: Optional[Time] = None,
     ):
@@ -709,7 +713,8 @@ class DynamicKernelManager(ABC):
         self.regex = re.compile(regex)
         self.base_url = base_url
         self.keep_kernels = keep_kernels
-        self.prefetch_kernels = frefetch_kernels
+        self.pre_download_kernels = pre_download_kernels
+        self.prefetch_kernels = prefetch_kernels
         self.path = path
         self.min_time_to_load = min_time_to_load
         self.max_time_to_load = max_time_to_load
@@ -720,23 +725,27 @@ class DynamicKernelManager(ABC):
         self.loaded_kernels = []
         self.load_metadata()
 
-        if pre_download_kernels:
+        if self.pre_download_kernels:
             self.download_kernels()
         elif self.prefetch_kernels > 0:
             for kernel in self.kernel_pool[: self.prefetch_kernels]:
                 # Fire and forget thread to download data, concurrency is solved with file locks already
                 threading.Thread(target=kernel.ensure_downloaded, daemon=True).start()
 
-
     def apply_time_interval_kernel_filter(self) -> None:
         """
         Filters the kernel pool based on the min_time_to_load and max_time_to_load
         It is inclusive, it's enough to be partially relevant
         """
-        if self.min_time_to_load:
-            self.kernel_pool = [kernel for kernel in self.kernel_pool if kernel.time_stop >= self.min_time_to_load]
-        if self.max_time_to_load:
-            self.kernel_pool = [kernel for kernel in self.kernel_pool if kernel.time_start <= self.max_time_to_load]
+        keep_kernels = []
+        for kernel in self.kernel_pool:
+            if (self.min_time_to_load is not None and kernel.time_stop <= self.min_time_to_load) or (
+                self.max_time_to_load is not None and kernel.time_start >= self.max_time_to_load
+            ):
+                kernel.unload()
+                continue
+            keep_kernels.append(kernel)
+        self.kernel_pool = keep_kernels
 
     def load_metadata(self):
         response = requests.get(self.base_url)
@@ -783,8 +792,8 @@ class DynamicKernelManager(ABC):
         _id points to kernel list
         """
         # Fire and forget thread to download data, concurrency is solved with file locks already
-        if self.prefetch_kernels > 0:
-            for kernel in self.kernel_pool[_id+1:_id + self.prefetch_kernels]:
+        if self.prefetch_kernels > 0 and not self.pre_download_kernels:
+            for kernel in self.kernel_pool[_id + 1 : _id + self.prefetch_kernels]:
                 threading.Thread(target=kernel.ensure_downloaded, daemon=True).start()
 
         kernel = self.kernel_pool[_id]
@@ -835,6 +844,7 @@ class LBLDynamicKernelLoader(DynamicKernelManager):
         metadata_regex: str,
         keep_kernels: bool = True,
         pre_download_kernels: bool = True,
+        prefetch_kernels: int = KERNEL_PREFETCH_COUNT,
         min_time_to_load: Optional[Time] = None,
         max_time_to_load: Optional[Time] = None,
     ):
@@ -852,7 +862,16 @@ class LBLDynamicKernelLoader(DynamicKernelManager):
             (commented out for now, but in case it would be needed, uncommenting the code will bring it back to life)
         """
         self.metadata_regex = re.compile(metadata_regex)
-        super().__init__(path, base_url, regex, keep_kernels, pre_download_kernels, min_time_to_load, max_time_to_load)
+        super().__init__(
+            path,
+            base_url,
+            regex,
+            keep_kernels,
+            pre_download_kernels,
+            prefetch_kernels,
+            min_time_to_load,
+            max_time_to_load,
+        )
 
     def parse_kernel_time_bounds(self, filename, url) -> Dict:
         """
