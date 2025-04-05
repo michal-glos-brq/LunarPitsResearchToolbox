@@ -29,7 +29,7 @@ from src.simulators.config import (
     DYNAMIC_MAX_BUFFER_SPACECRAFT_VELOCITY_UPDATE_RATE,
     SIM_STATE_DUMP_INTERVAL,
 )
-from src.global_config import SUPRESS_TQDM
+from src.global_config import SUPRESS_TQDM, TQDM_NCOLS
 
 
 class SPICELog:
@@ -42,18 +42,21 @@ class SPICELog:
         """
         Log the exception with its type and any SPICE error state.
         """
-        if SPICELog.supress_output:
-            return
-        err_type = type(e).__name__
-        msg = f"{context} Exception: [{err_type}] {e}"
-        if spice.failed():
-            spice_error_message = spice.getmsg("SHORT")
-            msg += f" | SPICE error: {spice_error_message}"
-            spice.reset()
-        if SPICELog.interactive_progress:
-            tqdm.write(msg)
-        else:
-            logging.warning(msg)
+        try:
+            if SPICELog.supress_output:
+                return
+            err_type = type(e).__name__
+            msg = f"{context} Exception: [{err_type}] {e}"
+            if spice.failed():
+                spice_error_message = spice.getmsg("SHORT")
+                msg += f" | SPICE error: {spice_error_message}"
+                spice.reset()
+            if SPICELog.interactive_progress:
+                tqdm.write(msg)
+            else:
+                logging.warning(msg)
+        except Exception:
+            ...
 
 
 class DynamicMaxBuffer:
@@ -110,14 +113,14 @@ class RemoteSensingSimulator:
                 height = np.linalg.norm(instrument.project_boresight(current_et).spacecraft_relative)
                 self.heights.add(height)
             except Exception as e:
-                SPICELog.log_spice_exception(e, f"Initial height calculation for {instrument.name}")
                 self.heights.add(instrument._height)
+                SPICELog.log_spice_exception(e, f"Initial height calculation for {instrument.name}")
             try:
                 fov_width = instrument.recalculate_bounds_to_boresight_distance(current_et)
                 self.fov_widths.add(fov_width)
             except Exception as e:
-                SPICELog.log_spice_exception(e, f"Initial FOV calculation for {instrument.name}")
                 self.fov_widths.add(instrument._fov_width)
+                SPICELog.log_spice_exception(e, f"Initial FOV calculation for {instrument.name}")
 
         def dump_status_lines(self) -> List[str]:
             name = self.success_collections.name[:22]
@@ -141,11 +144,17 @@ class RemoteSensingSimulator:
             }
 
     class SimulationState:
-        def __init__(self, kernel_manager: BaseKernelManager):
+        def __init__(self, kernel_manager: BaseKernelManager, satellite_name: str):
             self.kernel_manager = kernel_manager
             self.simulation_timekeeper = timedelta(seconds=0)
             self.max_speed = DynamicMaxBuffer(DYNAMIC_MAX_BUFFER_SPACECRAFT_VELOCITY_SIZE)
             self.max_speed_counter = 0
+            self.satellite_name = satellite_name
+            self.spacecraft_position_computation_failed = []
+            self.spacecraft_position_computation_failed_counter = 0
+            self.spacecraft_position_computation_failed_collection = Sessions.get_spacecraft_position_failed_collection(
+                satellite_name
+            )
 
         def _setup_time(self, time_obj: Time):
             """Initialize the simulation timing. Can be used for reset too."""
@@ -192,6 +201,15 @@ class RemoteSensingSimulator:
 
             elif not self.threads[thread_id].is_alive():
                 self.threads[thread_id].join()
+
+    def flush_SPICE(self):
+        """
+        Flush SPICE errors and reset the error state.
+        """
+        try:
+            spice.utc2et(self.simulation_state.current_simulation_timestamp.utc.iso)
+        except Exception as e:
+            ...
 
     def _simulation_step(self):
         # Early rejection based on spacecraft position.
@@ -246,6 +264,8 @@ class RemoteSensingSimulator:
                     distances_to_thresholds.append(distance)
             except Exception as e:
                 SPICELog.log_spice_exception(e, f"Error calculating projection for {instrument.name}")
+                self.flush_SPICE()
+
                 datetime_current_timestamp = self.simulation_state.current_simulation_timestamp.to_datetime()
                 instrument_state.failed_computation_batch.append(
                     {
@@ -281,6 +301,26 @@ class RemoteSensingSimulator:
                     SPICELog.log_spice_exception(e, f"Updating FOV for {instrument.name}")
                 instrument_state.fov_widths_counter = DYNAMIC_MAX_BUFFER_FOV_WIDTH_UPDATE_RATE
 
+    def simulation_step(self):
+        """
+        Perform a single simulation step.
+        This method should be called in a loop to advance the simulation.
+        """
+        try:
+            self._simulation_step()
+        except Exception as e:
+            self.simulation_state.spacecraft_position_computation_failed.append(
+                {
+                    "et": self.simulation_state.current_simulation_timestamp_et,
+                    "timestamp_utc": self.simulation_state.current_simulation_timestamp.to_datetime(),
+                    "error": str(e),
+                    "satellite_name": self.simulation_state.satellite_name,
+                }
+            )
+            self.simulation_state.spacecraft_position_computation_failed_counter += 1
+            SPICELog.log_spice_exception(e, "Error during simulation step")
+            self.flush_SPICE()
+
     def _simulation_step_housekeeping(
         self, pbar, interactive_progress: bool = True, current_task: Optional[Task] = None
     ):
@@ -289,12 +329,16 @@ class RemoteSensingSimulator:
         # Periodically dump the state of simulation
         if time.time() - self.simulation_state.real_time > SIM_STATE_DUMP_INTERVAL:
             state_string_prefix = "========== SIMULATION STATE REPORT ==========\n"
+            state_string_prefix += (
+                f"Simulation name: {self.simulation_name}; simulation id: {self.simulation_metadata_id}\n"
+            )
             block_lines = [state.dump_status_lines() for state in self.instrument_simulation_states.values()]
             transposed = zip(*block_lines)
             aligned_output = "\n".join("   ".join(f"{s:<16}" for s in line_parts) for line_parts in transposed)
             state_string = (
                 aligned_output
                 + f"\n🚀  Locally max spacecraft speed: {self.simulation_state.max_speed.maximum:.2f} km/s\n"
+                + f"Failed computations: {self.simulation_state.spacecraft_position_computation_failed_counter}\n"
             )
             state_string = state_string_prefix + state_string
 
@@ -326,7 +370,6 @@ class RemoteSensingSimulator:
             self.threads.append(update_thread)
             self.simulation_state.real_time = time.time()
 
-
         if interactive_progress:
             pbar.update(self.computation_timedelta.sec)
         else:
@@ -335,6 +378,14 @@ class RemoteSensingSimulator:
             )
 
         # Flush data to the database.
+        if len(self.simulation_state.spacecraft_position_computation_failed) >= MONGO_PUSH_BATCH_SIZE:
+            thread = Sessions.start_background_batch_insert(
+                self.simulation_state.spacecraft_position_computation_failed,
+                self.simulation_state.spacecraft_position_computation_failed_collection,
+            )
+            self.threads.append(thread)
+            self.simulation_state.spacecraft_position_computation_failed = []
+
         for instrument in self.instruments:
             instrument_state = self.instrument_simulation_states[instrument.name]
             if len(instrument_state.positive_sensing_batch) >= MONGO_PUSH_BATCH_SIZE:
@@ -343,31 +394,38 @@ class RemoteSensingSimulator:
                 )
                 self.threads.append(thread)
                 instrument_state.positive_sensing_batch = []
-                self.check_threads()
+
             if len(instrument_state.failed_computation_batch) >= MONGO_PUSH_BATCH_SIZE:
                 thread = Sessions.start_background_batch_insert(
                     instrument_state.failed_computation_batch, instrument_state.failed_collections
                 )
                 self.threads.append(thread)
                 instrument_state.failed_computation_batch = []
-                self.check_threads()
+            
+            self.check_threads()
+
 
     def create_metadata_record(self):
         self.simulation_metadata_id = ObjectId()
         simulation_metadata = {
             "_id": self.simulation_metadata_id,  # Explicit ID
             "simulation_name": self.simulation_name,
-            "simulation_id": self.simulation_id,
             "start_time": self.start_time.utc.iso,
             "end_time": self.end_time.utc.iso,
             "last_logged_time": self.simulation_state.current_simulation_timestamp.utc.iso,
-            "kernel_manager_min_time": self.kernel_manager.min_loaded_time.utc.iso if self.kernel_manager.min_loaded_time else None,
-            "kernel_manager_max_time": self.kernel_manager.max_loaded_time.utc.iso if self.kernel_manager.max_loaded_time else None,
+            "kernel_manager_min_time": (
+                self.kernel_manager.min_loaded_time.utc.iso if self.kernel_manager.min_loaded_time else None
+            ),
+            "kernel_manager_max_time": (
+                self.kernel_manager.max_loaded_time.utc.iso if self.kernel_manager.max_loaded_time else None
+            ),
             "instruments": [instrument.name for instrument in self.instruments],
+            "satellite_name": self.instruments[0].satellite_name,
             "filter_name": self.filter.name,
             "frame": self.kernel_manager.main_reference_frame,
             "created_at": Time.now().utc.iso,
             "finished": False,
+            "base_step": SIMULATION_STEP,
         }
         Sessions.insert_simulation_metadata(simulation_metadata)
 
@@ -393,10 +451,9 @@ class RemoteSensingSimulator:
         self.simulation_duration_formatted = RemoteSensingSimulator.format_td(self.simulation_duration)
         self.total_seconds = self.simulation_duration.total_seconds()
         self.simulation_name = simulation_name
-        self.simulation_id = str(uuid.uuid4())
 
         # Initialize simulation state.
-        self.simulation_state = self.SimulationState(self.kernel_manager)
+        self.simulation_state = self.SimulationState(self.kernel_manager, self.instruments[0].satellite_name)
         self.simulation_state._setup_time(self.start_time)
 
         # Initialize instrument simulation states using current ET.
@@ -407,7 +464,11 @@ class RemoteSensingSimulator:
             for instrument in self.instruments
         }
 
-        pbar = tqdm(total=self.total_seconds, unit="s", disable=SUPRESS_TQDM) if interactive_progress else nullcontext()
+        pbar = (
+            tqdm(total=self.total_seconds, unit="s", disable=SUPRESS_TQDM, ncols=TQDM_NCOLS)
+            if interactive_progress
+            else nullcontext()
+        )
 
         # Log the simulation state into Mongo
         self.create_metadata_record()
@@ -418,13 +479,19 @@ class RemoteSensingSimulator:
         with pbar:
             while self.simulation_state.current_simulation_timestamp < self.end_time:
                 try:
-                    self._simulation_step()
+                    self.simulation_step()
                 except Exception as e:
                     SPICELog.log_spice_exception(e, "Error during simulation step")
                 finally:
                     self._simulation_step_housekeeping(pbar, interactive_progress, current_task)
 
         # Final flush to the database.
+        if self.simulation_state.spacecraft_position_computation_failed:
+            Sessions.start_background_batch_insert(
+                self.simulation_state.spacecraft_position_computation_failed,
+                self.simulation_state.spacecraft_position_computation_failed_collection,
+            )
+
         for instrument in self.instruments:
             instrument_state = self.instrument_simulation_states[instrument.name]
             if instrument_state.positive_sensing_batch:
@@ -437,8 +504,6 @@ class RemoteSensingSimulator:
                     instrument_state.failed_computation_batch, instrument_state.failed_collections
                 )
                 self.threads.append(thread)
-
-        
 
         update_thread = Sessions.start_background_update_simulation_metadata(
             self.simulation_metadata_id,

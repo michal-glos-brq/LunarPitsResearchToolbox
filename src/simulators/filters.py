@@ -6,9 +6,11 @@ from abc import ABC, abstractmethod
 import numpy as np
 import spiceypy as spice
 from scipy.spatial import cKDTree
+from filelock import FileLock
 
 from src.db.interface import Sessions
 from src.global_config import LUNAR_RADIUS
+from src.SPICE.config import DSK_KERNEL_LOCK_TIMEOUT, KERNEL_LOCK_POLL_INTERVAL
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +43,8 @@ class PointFilter(BaseFilter):
         """
         self.dsk_filename = dsk_filename
         self._hard_radius = hard_radius
-        self._load_target_points(dsk_filename)
+        with FileLock(dsk_filename + ".lock", timeout=DSK_KERNEL_LOCK_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL):
+            self._load_target_points(dsk_filename)
 
     @property
     def name(self) -> str:
@@ -58,6 +61,7 @@ class PointFilter(BaseFilter):
         lon_rad = np.radians(points["longitude"])
 
         # Load DSK file and get a valid handle
+
         dsk_handle = spice.dasopr(dsk_filename)  # Open the DSK file
         # Find the DSK segment descriptor
         dladsc = spice.dlabfs(dsk_handle)  # Get the first segment in the file
@@ -99,7 +103,7 @@ class AreaFilter(BaseFilter):
         self.min_lon = min_lon
         self.max_lon = max_lon
 
-        self.lat_condition = lambda lat: self.min_lat <=  lat <= self.max_lat
+        self.lat_condition = lambda lat: self.min_lat <= lat <= self.max_lat
         self.lat_distance_function = lambda lat: min(abs(self.min_lat - lat), abs(self.max_lat - lat))
 
         if min_lon >= max_lon:
@@ -137,7 +141,6 @@ class AreaFilter(BaseFilter):
 
         # Scale longitude by cos(latitude) to correct for spherical distortion
         lon_dist_scaled = lon_dist * np.cos(np.radians(lat_deg))
-
 
         # Compute final straight-line (Cartesian-like) distance
         return np.sqrt(lat_dist**2 + lon_dist_scaled**2) * (np.pi * LUNAR_RADIUS / 180)

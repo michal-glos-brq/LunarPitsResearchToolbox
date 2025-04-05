@@ -1,8 +1,9 @@
 
 
 # This is DIVINER sampling rate and poses as a reasonable base timestep for the simulation
-SIMULATION_STEP = 1.024
-# SIMULATION_STEP = 1.024 * 3600 # Testing purposes - whether it can run full sim and not crash
+# TODO: Uncomment
+# SIMULATION_STEP = 1.024
+SIMULATION_STEP = 1.024 * 3600 # Testing purposes - whether it can run full sim and not crash
 
 # To be really inclusive, treshold is multiplied by this values
 TOLERANCE_MARGIN = 1.1
@@ -22,6 +23,7 @@ DYNAMIC_MAX_BUFFER_SPACECRAFT_VELOCITY_UPDATE_RATE = 64
 MONGO_PUSH_BATCH_SIZE = 256
 
 # Printing the simulation progress in somehow human friendly way
-SIM_STATE_DUMP_INTERVAL = 60 * 15 # Each 15 minutes
-# SIM_STATE_DUMP_INTERVAL = 60
+# TODO: Uncomment
+# SIM_STATE_DUMP_INTERVAL = 60 * 15 # Each 15 minutes
+SIM_STATE_DUMP_INTERVAL = 60
 

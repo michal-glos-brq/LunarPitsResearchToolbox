@@ -22,6 +22,7 @@ from src.db.config import (
     PIT_ATLAS_IMAGE_COLLECTION_NAME,
     SIMULATION_DB_NAME,
     SIMULATION_METADATA_COLLECTION,
+    MAX_MONGO_RETRIES,
 )
 
 
@@ -43,12 +44,9 @@ class Sessions:
     """
 
     client: MongoClient = None
-    # thread-safe queue to store failed batches
     failed_inserts = queue.Queue()
     sessions = {}
     lunar_pit_locations = None
-    # It will eventually go throught ...
-    max_retries = 100
 
     def __init__(self):
         """
@@ -61,7 +59,6 @@ class Sessions:
     @staticmethod
     def is_client_alive(client: MongoClient):
         try:
-            # ping the server
             client.admin.command("ping")
             return True
         except errors.PyMongoError:
@@ -96,6 +93,18 @@ class Sessions:
         Sessions.sessions[db_name] = Sessions.client[db_name]
         return Sessions.sessions[db_name]
 
+
+    @staticmethod
+    def reconnect_collection(collection):
+        """
+        Reconnect to the given collection object dynamically.
+        """
+        db_name = collection.database.name
+        collection_name = collection.name
+        session = Sessions.get_db_session(db_name)
+        return session[collection_name]
+
+
     @staticmethod
     def get_all_pits_points():
         """
@@ -122,7 +131,7 @@ class Sessions:
         return Sessions.lunar_pit_locations
 
     @staticmethod
-    def prepare_simulation_collections(instrument_name: str, succesfull_indices: List[str] = ["et"]):
+    def prepare_simulation_collections(instrument_name: str, indices: List[str] = ["et", "meta.simulation_id"]):
         """
         Ensures collections exist to store positive and failed simulation results for the given instrument.
         Returns a tuple: (positive_collection, failed_collection).
@@ -150,11 +159,6 @@ class Sessions:
 
         positive_collection = session[positive_collection_name]
 
-        # Ensure proper indexes exist for efficient querying
-        for index in succesfull_indices:
-            positive_collection.create_index(index)
-        # collection.create_index([("boresight", "2dsphere")])  # Spatial index for boresight queries
-        # Optionally: positive_collection.create_index([("boresight", "2dsphere")]) for spatial queries.
         if failed_collection_name not in session.list_collection_names():
             try:
                 session.create_collection(
@@ -169,7 +173,11 @@ class Sessions:
                 pass
 
         failed_collection = session[failed_collection_name]
-        failed_collection.create_index("et")  # Queries by time range
+
+
+        for index in indices:
+            positive_collection.create_index(index)
+            failed_collection.create_index(index)
 
         return positive_collection, failed_collection
 
@@ -196,12 +204,12 @@ class Sessions:
         wait_time = 2
 
         # Retry loop with exponential backoff
-        for attempt in range(Sessions.max_retries):
+        for attempt in range(MAX_MONGO_RETRIES):
             try:
                 collection.insert_many(results, ordered=False)  # Insert in bulk, unordered (faster)
                 return  # Success, exit function
             except errors.PyMongoError as e:
-                if attempt >= Sessions.max_retries - 1:
+                if attempt >= MAX_MONGO_RETRIES - 1:
                     logging.error("Batch insert failed permanently: %s", e)
                     Sessions.failed_inserts.put((results, collection))
                 wait_time *= 1.2
@@ -240,6 +248,15 @@ class Sessions:
         session[SIMULATION_METADATA_COLLECTION].update_one({"_id": metadata_id}, {"$set": update_fields})
 
     @staticmethod
+    def get_spacecraft_position_failed_collection(spacecraft_name: str):
+        """
+        Returns the failed collection for the given instrument.
+        """
+        session = Sessions.get_db_session(SIMULATION_DB_NAME)
+        failed_collection_name = f"{spacecraft_name.replace(' ', '_')}_satellite_position_failed"
+        return session[failed_collection_name]
+
+    @staticmethod
     def start_background_update_simulation_metadata(metadata_id, current_time_iso, finished=None):
         """
         Spawns a background thread to update the simulation metadata document.
@@ -253,9 +270,6 @@ class Sessions:
 
     @staticmethod
     def process_failed_inserts():
-        """
-        Repeatedly try to process failed insert batches until the queue is empty.
-        """
         while not Sessions.failed_inserts.empty():
             results, collection = Sessions.failed_inserts.get()
             try:
@@ -263,6 +277,11 @@ class Sessions:
                 logging.info("Successfully reinserted failed batch.")
             except errors.PyMongoError as e:
                 logging.error("Reinsert of failed batch failed: %s", e)
-                # Optionally, you could put it back into the queue and sleep briefly.
+                try:
+                    collection = Sessions.reconnect_collection(collection)
+                    logging.info("Reconnected to collection: %s", collection.name)
+                except Exception as reconnect_error:
+                    logging.error("Failed to reconnect collection: %s", reconnect_error)
+
                 Sessions.failed_inserts.put((results, collection))
                 time.sleep(5)

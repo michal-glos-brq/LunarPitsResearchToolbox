@@ -8,6 +8,7 @@ from src.global_config import HDD_BASE_PATH
 
 MONGO_URI = "mongodb://admin:password@localhost:27017"
 
+MAX_MONGO_RETRIES = 240
 
 PIT_ATLAS_DB_NAME = "lro_pits"
 

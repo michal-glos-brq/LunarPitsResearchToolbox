@@ -44,24 +44,22 @@ import random
 import re
 import requests
 import time
-import uuid
-import errno
 import asyncio
 import aiohttp
 import threading
 import aiofiles
-import aiofiles.os
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from urllib.parse import urljoin
 from typing import Optional, List, Dict, Sequence
 
-from filelock import FileLock
 from astropy.time import Time
 import spiceypy as spice
 from tqdm.asyncio import tqdm
 from bs4 import BeautifulSoup as bs
 
+from src.SPICE.kernel_utils.locks import SharedFileUseLock
+from filelock import FileLock
 from src.global_config import TQDM_NCOLS
 from src.SPICE.config import (
     MAX_LOADED_DYNAMIC_KERNELS,
@@ -72,124 +70,12 @@ from src.SPICE.config import (
     SPICE_READ_TIMEOUT,
     SPICE_TOTAL_TIMEOUT,
     KERNEL_TIME_KEYS,
-    SPICE_KERNEL_LOCK_TIMEOUT,
-    KERNEL_LOCK_POLL_INTERVAL,
     SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT,
     KERNEL_PREFETCH_COUNT,
+    KERNEL_LOCK_POLL_INTERVAL,
 )
 
 logger = logging.getLogger(__name__)
-
-
-### A semaphore-like structure to make sure SPICE kernels are not tinkered with from other processes
-
-
-class SharedFileUseLock:
-    def __init__(self, target_path: str, check_stale: bool = True):
-        """
-        :param target_path: Path of the target file.
-        :param check_stale: Whether to clean up stale locks in is_in_use().
-        """
-        self.target_path = os.path.abspath(target_path)
-        self.lock_dir = self.target_path + ".locks"
-        os.makedirs(self.lock_dir, exist_ok=True)
-        self.check_stale = check_stale
-        self.lock_path = os.path.join(self.lock_dir, f"{uuid.uuid4().hex}.lock")
-        self.cleanup_stale_locks()
-
-    def register_use(self) -> str:
-        """
-        Marks that the current process is using the file by writing its PID.
-        Returns the lock file path.
-        """
-        with open(self.lock_path, "w") as f:
-            f.write(str(os.getpid()))
-
-    def release_use(self):
-        """
-        Removes the given lock file to indicate the end of usage.
-        """
-        try:
-            os.remove(self.lock_path)
-        except FileNotFoundError:
-            pass
-
-    def _pid_exists(self, pid: int) -> bool:
-        try:
-            os.kill(pid, 0)
-        except OSError as e:
-            return e.errno == errno.EPERM
-        return True
-
-    def cleanup_stale_locks(self):
-        """
-        Iterates over lock files and removes those whose PID no longer exists.
-        """
-        for name in os.listdir(self.lock_dir):
-            if not name.endswith(".lock"):
-                continue
-            path = os.path.join(self.lock_dir, name)
-            try:
-                with open(path, "r") as f:
-                    pid = int(f.read().strip())
-                if not self._pid_exists(pid):
-                    os.remove(path)
-            except Exception:
-                os.remove(path)
-                continue
-
-    def is_in_use(self, cleanup_stale: bool = None) -> bool:
-        """
-        Checks if any process is using the file.
-        If cleanup_stale is True (defaulting to self.check_stale), stale locks are cleaned up.
-        """
-        if cleanup_stale is None:
-            cleanup_stale = self.check_stale
-        if cleanup_stale:
-            self.cleanup_stale_locks()
-        return any(name.endswith(".lock") for name in os.listdir(self.lock_dir))
-
-    def wait_until_free(
-        self, timeout: float = SPICE_KERNEL_LOCK_TIMEOUT, poll_interval: float = KERNEL_LOCK_POLL_INTERVAL
-    ):
-        """
-        Waits until no process is using the file or until timeout.
-        """
-        start = time.time()
-        while self.is_in_use():
-            if (time.time() - start) > timeout:
-                raise TimeoutError(f"Timeout: File still in use after {timeout} seconds: {self.target_path}")
-            time.sleep(poll_interval)
-
-    def force_clear(self):
-        """
-        Deletes all lock files. Use with caution.
-        """
-        for name in os.listdir(self.lock_dir):
-            if name.endswith(".lock"):
-                try:
-                    os.remove(os.path.join(self.lock_dir, name))
-                except Exception:
-                    pass
-
-    async def async_try_delete_file(self) -> bool:
-        """
-        Asynchronously tries to delete the target file if it's not in use.
-        Returns True if file was deleted, False if still in use or not found.
-        """
-        self.cleanup_stale_locks()
-        if self.is_in_use(cleanup_stale=False):
-            return False
-
-        try:
-            await aiofiles.os.remove(self.target_path)
-            logger.debug("Asynchronously deleted unused file: %s", self.target_path)
-            return True
-        except FileNotFoundError:
-            return False
-        except Exception as e:
-            logger.warning("Failed async delete on %s: %s", self.target_path, e)
-            return False
 
 
 #####################################################################################################################
@@ -256,7 +142,9 @@ class BaseKernel:
     def delete_file(self) -> None:
         """Delete the file from disk"""
         if self.file_exists:
-            asyncio.create_task(self._lock.async_try_delete_file())
+            threading.Thread(
+                target=lambda: asyncio.run(self._lock.async_try_delete_file()), daemon=True
+            ).start()
             logger.debug("Scheduled async deletion of kernel file %s", self.filename)
         else:
             logger.debug("Attempted to delete non-existing kernel file %s", self.filename)
@@ -269,10 +157,9 @@ class BaseKernel:
             raise ValueError(f"Size mismatch: expected {expected} bytes, got {actual} bytes")
 
     def download_file(self, url: str, filename: str) -> None:
-        with FileLock(filename + ".tmp.lock", timeout=SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT):
-            if os.path.exists(filename):
-                return
-            self._download_file(url, filename)
+        with FileLock(filename + ".tmp.lock", timeout=SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL):
+            if not os.path.exists(filename):
+                self._download_file(url, filename)
 
     ### Nesting crime scene start
     def _download_file(self, url: str, filename: str) -> None:
@@ -357,10 +244,9 @@ class BaseKernel:
                     return
 
     async def async_download_file(self, url: str, filename: str) -> None:
-        with FileLock(filename + ".tmp.lock", timeout=SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT):
-            if os.path.exists(filename):
-                return
-            await self._async_download_file(url, filename)
+        with FileLock(filename + ".tmp.lock", timeout=SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL):
+            if not os.path.exists(filename):
+                await self._async_download_file(url, filename)
 
     async def _async_download_file(self, url: str, filename: str) -> None:
         """
@@ -802,8 +688,9 @@ class DynamicKernelManager(ABC):
 
         self.loaded_kernels.append(kernel)
         if len(self.loaded_kernels) > MAX_LOADED_DYNAMIC_KERNELS:
-            kernel = self.loaded_kernels.pop(0)
-            kernel.unload()
+            old_kernel = self.loaded_kernels.pop(0)
+            logger.debug("Unloading kernel due to pool limit: %s", old_kernel.filename)
+            old_kernel.unload()
 
     def reload_kernels(self, time: Time) -> bool:
         """
@@ -828,7 +715,7 @@ class DynamicKernelManager(ABC):
         Unload all loaded kernels
         """
         for kernel in self.loaded_kernels:
-            spice.unload(kernel.filename)
+            kernel.unload()
         self.loaded_kernels = []
         self.active_kernel_id = -1
         self.kernel_pool = []
