@@ -5,11 +5,15 @@ It's purpose is to extract all DB work into this file
 A lot of redundant and overly-specific  use cases to general use case functionalities are implemented - refactoring needed.
 """
 
-from typing import List
 import time
+import logging
+import queue
 import threading
+from typing import List
+
 import pandas as pd
 from pymongo import MongoClient, errors
+
 from src.db.config import (
     MONGO_URI,
     PIT_ATLAS_DB_NAME,
@@ -39,9 +43,11 @@ class Sessions:
     """
 
     client: MongoClient = None
+    # thread-safe queue to store failed batches
+    failed_inserts = queue.Queue()
     sessions = {}
     lunar_pit_locations = None
-    # It will eventually go thoutgh ...
+    # It will eventually go throught ...
     max_retries = 100
 
     def __init__(self):
@@ -53,14 +59,31 @@ class Sessions:
         raise NotImplementedError("This class is a singleton and cannot be instantiated.")
 
     @staticmethod
+    def is_client_alive(client: MongoClient):
+        try:
+            # ping the server
+            client.admin.command("ping")
+            return True
+        except errors.PyMongoError:
+            return False
+
+    @staticmethod
     def get_db_session(db_name: str):
         """
         Returns a MongoDB database session for the given database name.
         If the session does not already exist, it is created.
         If the database is new, a temporary collection is created and dropped.
         """
-        if Sessions.client is None:
-            Sessions.client = MongoClient(MONGO_URI)
+        if Sessions.client is None or not Sessions.is_client_alive(Sessions.client):
+            Sessions.client = MongoClient(
+                MONGO_URI,
+                serverSelectionTimeoutMS=5000,
+                socketTimeoutMS=10000,
+                connectTimeoutMS=5000,
+                retryWrites=True,
+                retryReads=True,
+                maxPoolSize=20,
+            )
 
         if hasattr(Sessions.sessions, db_name):
             return Sessions.sessions[db_name]
@@ -69,8 +92,8 @@ class Sessions:
             # Create and immediately drop a temporary collection to initialize the database.
             Sessions.client[db_name].create_collection("_placeholder_collection")
             Sessions.client[db_name]["_placeholder_collection"].drop()
-        Sessions.sessions[db_name] = Sessions.client[db_name]
 
+        Sessions.sessions[db_name] = Sessions.client[db_name]
         return Sessions.sessions[db_name]
 
     @staticmethod
@@ -179,7 +202,8 @@ class Sessions:
                 return  # Success, exit function
             except errors.PyMongoError as e:
                 if attempt >= Sessions.max_retries - 1:
-                    raise e
+                    logging.error("Batch insert failed permanently: %s", e)
+                    Sessions.failed_inserts.put((results, collection))
                 wait_time *= 1.2
                 time.sleep(wait_time)
 
@@ -212,7 +236,8 @@ class Sessions:
         update_fields = {"last_logged_time": current_time_iso}
         if finished is not None:
             update_fields["finished"] = finished
-        Sessions.simulation_metadata_collection().update_one({"_id": metadata_id}, {"$set": update_fields})
+        session = Sessions.get_db_session(SIMULATION_DB_NAME)
+        session[SIMULATION_METADATA_COLLECTION].update_one({"_id": metadata_id}, {"$set": update_fields})
 
     @staticmethod
     def start_background_update_simulation_metadata(metadata_id, current_time_iso, finished=None):
@@ -225,3 +250,19 @@ class Sessions:
         thread.daemon = True
         thread.start()
         return thread
+
+    @staticmethod
+    def process_failed_inserts():
+        """
+        Repeatedly try to process failed insert batches until the queue is empty.
+        """
+        while not Sessions.failed_inserts.empty():
+            results, collection = Sessions.failed_inserts.get()
+            try:
+                collection.insert_many(results, ordered=False)
+                logging.info("Successfully reinserted failed batch.")
+            except errors.PyMongoError as e:
+                logging.error("Reinsert of failed batch failed: %s", e)
+                # Optionally, you could put it back into the queue and sleep briefly.
+                Sessions.failed_inserts.put((results, collection))
+                time.sleep(5)

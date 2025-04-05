@@ -32,17 +32,28 @@ from src.simulators.config import (
 from src.global_config import SUPRESS_TQDM
 
 
-def log_spice_exception(e: Exception, context: str = ""):
-    """
-    Log the exception with its type and any SPICE error state.
-    """
-    err_type = type(e).__name__
-    msg = f"{context} Exception: [{err_type}] {e}"
-    if spice.failed():
-        spice_error_message = spice.getmsg("SHORT")
-        msg += f" | SPICE error: {spice_error_message}"
-        spice.reset()
-    logging.warning(msg)
+class SPICELog:
+
+    interactive_progress: bool = True
+    supress_output: bool = False
+
+    @staticmethod
+    def log_spice_exception(e: Exception, context: str = ""):
+        """
+        Log the exception with its type and any SPICE error state.
+        """
+        if SPICELog.supress_output:
+            return
+        err_type = type(e).__name__
+        msg = f"{context} Exception: [{err_type}] {e}"
+        if spice.failed():
+            spice_error_message = spice.getmsg("SHORT")
+            msg += f" | SPICE error: {spice_error_message}"
+            spice.reset()
+        if SPICELog.interactive_progress:
+            tqdm.write(msg)
+        else:
+            logging.warning(msg)
 
 
 class DynamicMaxBuffer:
@@ -99,13 +110,13 @@ class RemoteSensingSimulator:
                 height = np.linalg.norm(instrument.project_boresight(current_et).spacecraft_relative)
                 self.heights.add(height)
             except Exception as e:
-                log_spice_exception(e, f"Initial height calculation for {instrument.name}")
+                SPICELog.log_spice_exception(e, f"Initial height calculation for {instrument.name}")
                 self.heights.add(instrument._height)
             try:
                 fov_width = instrument.recalculate_bounds_to_boresight_distance(current_et)
                 self.fov_widths.add(fov_width)
             except Exception as e:
-                log_spice_exception(e, f"Initial FOV calculation for {instrument.name}")
+                SPICELog.log_spice_exception(e, f"Initial FOV calculation for {instrument.name}")
                 self.fov_widths.add(instrument._fov_width)
 
         def dump_status_lines(self) -> List[str]:
@@ -234,7 +245,7 @@ class RemoteSensingSimulator:
                 else:
                     distances_to_thresholds.append(distance)
             except Exception as e:
-                log_spice_exception(e, f"Error calculating projection for {instrument.name}")
+                SPICELog.log_spice_exception(e, f"Error calculating projection for {instrument.name}")
                 datetime_current_timestamp = self.simulation_state.current_simulation_timestamp.to_datetime()
                 instrument_state.failed_computation_batch.append(
                     {
@@ -257,7 +268,7 @@ class RemoteSensingSimulator:
                 try:
                     instrument_state.heights.add(np.linalg.norm(projection.spacecraft_relative))
                 except Exception as e:
-                    log_spice_exception(e, f"Updating height for {instrument.name}")
+                    SPICELog.log_spice_exception(e, f"Updating height for {instrument.name}")
                 instrument_state.heights_counter = DYNAMIC_MAX_BUFFER_HEIGHT_UPDATE_RATE
             if instrument_state.fov_widths_counter == 0:
                 try:
@@ -267,7 +278,7 @@ class RemoteSensingSimulator:
                         )
                     )
                 except Exception as e:
-                    log_spice_exception(e, f"Updating FOV for {instrument.name}")
+                    SPICELog.log_spice_exception(e, f"Updating FOV for {instrument.name}")
                 instrument_state.fov_widths_counter = DYNAMIC_MAX_BUFFER_FOV_WIDTH_UPDATE_RATE
 
     def _simulation_step_housekeeping(
@@ -277,32 +288,36 @@ class RemoteSensingSimulator:
         self.simulation_state._time_step(self.computation_timedelta)
         # Periodically dump the state of simulation
         if time.time() - self.simulation_state.real_time > SIM_STATE_DUMP_INTERVAL:
+            state_string_prefix = "========== SIMULATION STATE REPORT ==========\n"
+            block_lines = [state.dump_status_lines() for state in self.instrument_simulation_states.values()]
+            transposed = zip(*block_lines)
+            aligned_output = "\n".join("   ".join(f"{s:<16}" for s in line_parts) for line_parts in transposed)
+            state_string = (
+                aligned_output
+                + f"\n🚀  Locally max spacecraft speed: {self.simulation_state.max_speed.maximum:.2f} km/s\n"
+            )
+            state_string = state_string_prefix + state_string
+
             if interactive_progress:
-                state_string_prefix = "========== SIMULATION STATE REPORT ==========\n"
-                block_lines = [state.dump_status_lines() for state in self.instrument_simulation_states.values()]
-                transposed = zip(*block_lines)
-                aligned_output = "\n".join("   ".join(f"{s:<16}" for s in line_parts) for line_parts in transposed)
-                state_string = (
-                    aligned_output
-                    + f"\n🚀  Locally max spacecraft speed: {self.simulation_state.max_speed.maximum:.2f} km/s\n"
-                )
-                state_string = state_string_prefix + state_string
                 tqdm.write(state_string)
-                if current_task is not None:
-                    state = {
-                        instrument.name: instrument_state.to_summary_dict()
-                        for instrument, instrument_state in self.instrument_simulation_states.items()
-                    }
-                    state["sc_speed"] = self.simulation_state.max_speed.maximum
-                    current_task.update_state(
-                        state="PROGRESS",
-                        meta={
-                            "state": state,
-                            "progress [%]": 100
-                            * self.simulation_state.simulation_timekeeper.total_seconds()
-                            / self.simulation_duration.total_seconds(),
-                        },
-                    )
+            else:
+                logging.info(state_string)
+
+            if current_task is not None:
+                state = {
+                    instrument.name: instrument_state.to_summary_dict()
+                    for instrument, instrument_state in self.instrument_simulation_states.items()
+                }
+                state["sc_speed"] = self.simulation_state.max_speed.maximum
+                current_task.update_state(
+                    state="PROGRESS",
+                    meta={
+                        "state": state,
+                        "progress [%]": 100
+                        * self.simulation_state.simulation_timekeeper.total_seconds()
+                        / self.simulation_duration.total_seconds(),
+                    },
+                )
 
             update_thread = Sessions.start_background_update_simulation_metadata(
                 self.simulation_metadata_id,
@@ -361,6 +376,7 @@ class RemoteSensingSimulator:
         start_time: Optional[Time] = None,
         end_time: Optional[Time] = None,
         interactive_progress: bool = True,
+        supress_error_logs: bool = False,
         current_task: Optional[Task] = None,
         simulation_name: Optional[str] = None,
     ):
@@ -396,12 +412,15 @@ class RemoteSensingSimulator:
         # Log the simulation state into Mongo
         self.create_metadata_record()
 
+        SPICELog.interactive_progress = interactive_progress
+        SPICELog.supress_output = supress_error_logs
+
         with pbar:
             while self.simulation_state.current_simulation_timestamp < self.end_time:
                 try:
                     self._simulation_step()
                 except Exception as e:
-                    log_spice_exception(e, "Error during simulation step")
+                    SPICELog.log_spice_exception(e, "Error during simulation step")
                 finally:
                     self._simulation_step_housekeeping(pbar, interactive_progress, current_task)
 
@@ -431,3 +450,5 @@ class RemoteSensingSimulator:
         # Await all threads.
         for thread in self.threads:
             thread.join()
+
+        Sessions.process_failed_inserts()
