@@ -113,7 +113,8 @@ class SharedFileUseLock:
                 except Exception:
                     pass
 
-    def async_try_delete_file(self) -> bool:
+
+    def try_delete_file(self) -> bool:
         """
         Tries to delete the target file if it's not in use.
         Returns True if file was deleted, False if still in use or not found.

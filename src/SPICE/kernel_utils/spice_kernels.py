@@ -21,7 +21,7 @@ Key Features:
 2. **Kernel Caching** – Automatic on-disk storage with cleanup support.
 3. **Time-Aware Loading** – Loads the appropriate kernel(s) for a given simulation timestamp.
 4. **Metadata Parsing** – Extracts time intervals from `.LBL` metadata for dynamic kernels.
-5. **Concurrent Operations** – Uses asyncio for parallel downloads and metadata processing.
+5. **Concurrent Operations** – Uses threading for parallel downloads and metadata processing.
 
 Structure:
 ----------
@@ -53,7 +53,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from astropy.time import Time
 import spiceypy as spice
-from tqdm.asyncio import tqdm
+from tqdm import tqdm
 from bs4 import BeautifulSoup as bs
 
 from src.SPICE.kernel_utils.locks import SharedFileUseLock
@@ -133,7 +133,7 @@ class BaseKernel:
     def delete_file(self) -> None:
         """Delete the file from disk"""
         if self.file_exists:
-            threading.Thread(target=lambda: self._lock.async_try_delete_file(), daemon=True).start()
+            threading.Thread(target=lambda: self._lock.try_delete_file(), daemon=True).start()
             logger.debug("Scheduled async deletion of kernel file %s", self.filename)
         else:
             logger.debug("Attempted to delete non-existing kernel file %s", self.filename)

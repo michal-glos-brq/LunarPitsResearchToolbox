@@ -68,7 +68,7 @@ class LunarPitAtlasMappingLROConfig(BaseSimulationConfig):
 
     filter_type = "point"
     filter_kwargs = {
-        "radius_km": 35,
+        "hard_radius": 35,
     }
 
 class TestLROShortSimulationConfig(BaseSimulationConfig):
@@ -97,7 +97,7 @@ class TestLROShortSimulationConfig(BaseSimulationConfig):
 
     filter_type = "point"
     filter_kwargs = {
-        "radius_km": 35,
+        "hard_radius": 35,
     }
 
 

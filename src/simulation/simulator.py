@@ -346,6 +346,9 @@ class RemoteSensingSimulator:
                 tqdm.write(state_string)
             else:
                 logging.info(state_string)
+                logging.info(
+                    f"Simulated time: {RemoteSensingSimulator.format_td(self.simulation_state.simulation_timekeeper)} / {self.simulation_duration_formatted}"
+                )
 
             if current_task is not None:
                 state = {
@@ -371,12 +374,7 @@ class RemoteSensingSimulator:
             self.threads.append(update_thread)
             self.simulation_state.real_time = time.time()
 
-        if interactive_progress:
-            pbar.update(self.computation_timedelta.sec)
-        else:
-            logging.info(
-                f"Simulated time: {RemoteSensingSimulator.format_td(self.simulation_state.simulation_timekeeper)} / {self.simulation_duration_formatted}"
-            )
+        pbar.update(self.computation_timedelta.sec)
 
         # Flush data to the database.
         if len(self.simulation_state.spacecraft_position_computation_failed) >= MONGO_PUSH_BATCH_SIZE:

@@ -11,6 +11,9 @@ scrape-lunar-pit-atlas:
 worker-build:
 	@docker build -f Dockerfile.worker -t worker .
 
+worker-build-no-cache:
+	@docker build -f Dockerfile.worker -t worker --no-cache .
+
 worker-start:
 	@mkdir -p ${UTILITY_VOLUME}
 	@chmod -R 777 ${UTILITY_VOLUME}
