@@ -1,6 +1,8 @@
-from astropy.time import Time, TimeDelta
+import uuid
 import logging
 from typing import Optional
+
+from astropy.time import Time, TimeDelta
 
 from src.SPICE.kernel_utils.kernel_management import LROKernelManager, GRAILKernelManager
 from src.SPICE.instruments import lro as lro_instruments
@@ -114,15 +116,21 @@ def run_remote_sensing_simulation(
             end_time=end_time,
             interactive_progress=False,
             current_task=self,
+            supress_error_logs=True,
+            task_group_id=str(uuid.uuid4()),
         )
     except Exception as e:
         logger.error(f"Simulation failed: {e}")
-        return {
-            "status": "failed",
-            "error": str(e),
-            "start_time": start_time.utc.iso,
-            "end_time": end_time.utc.iso,
-        }
+        if self:
+            self.update_state(
+                state="FAILURE",
+                meta={
+                    "error": str(e),
+                    "start_time": start_time.utc.iso,
+                    "end_time": end_time.utc.iso,
+                },
+            )
+        raise e
     finally:
         kernel_manager.unload_all()
 

@@ -352,7 +352,7 @@ class RemoteSensingSimulator:
 
             if current_task is not None:
                 state = {
-                    instrument.name: instrument_state.to_summary_dict()
+                    instrument: instrument_state.to_summary_dict()
                     for instrument, instrument_state in self.instrument_simulation_states.items()
                 }
                 state["sc_speed"] = self.simulation_state.max_speed.maximum
@@ -374,7 +374,8 @@ class RemoteSensingSimulator:
             self.threads.append(update_thread)
             self.simulation_state.real_time = time.time()
 
-        pbar.update(self.computation_timedelta.sec)
+        if interactive_progress:
+            pbar.update(self.computation_timedelta.sec)
 
         # Flush data to the database.
         if len(self.simulation_state.spacecraft_position_computation_failed) >= MONGO_PUSH_BATCH_SIZE:

@@ -32,3 +32,6 @@ lint:
 
 typecheck:
 	@poetry run mypy src || true
+
+docker-clean:
+	@docker image prune -f
