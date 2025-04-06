@@ -51,7 +51,7 @@ import aiofiles
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from urllib.parse import urljoin
-from typing import Optional, List, Dict, Sequence
+from typing import Optional, List, Dict, Sequence, Tuple
 
 from astropy.time import Time
 import spiceypy as spice
@@ -584,6 +584,7 @@ class DynamicKernelManager(ABC):
         prefetch_kernels: int = KERNEL_PREFETCH_COUNT,
         min_time_to_load: Optional[Time] = None,
         max_time_to_load: Optional[Time] = None,
+        time_intervals: Optional[Tuple[Time, Time]] = None,
     ):
         """
         path: local path to dynamic kernel folder
@@ -595,6 +596,7 @@ class DynamicKernelManager(ABC):
         frefetch_kernels: number of kernels to asynchronously prefetch
         min_time_to_load: minimum time to load the kernel, ditch kernels with max_time lower then this value
         max_time_to_load: maximum time to load the kernel, ditch kernels with min_time higher then this value
+        time_intervals: Optional[Tuple[Time, Time]] = None - This is another way of contraining the required time to load (sorted)
         """
         self.regex = re.compile(regex)
         self.base_url = base_url
@@ -602,6 +604,7 @@ class DynamicKernelManager(ABC):
         self.pre_download_kernels = pre_download_kernels
         self.prefetch_kernels = prefetch_kernels
         self.path = path
+        self.time_intervals = time_intervals
         self.min_time_to_load = min_time_to_load
         self.max_time_to_load = max_time_to_load
         # self.load_callbacks = load_callbacks
@@ -618,20 +621,39 @@ class DynamicKernelManager(ABC):
                 # Fire and forget thread to download data, concurrency is solved with file locks already
                 threading.Thread(target=kernel.ensure_downloaded, daemon=True).start()
 
+
+
     def apply_time_interval_kernel_filter(self) -> None:
         """
-        Filters the kernel pool based on the min_time_to_load and max_time_to_load
-        It is inclusive, it's enough to be partially relevant
+        Filters the kernel pool based on:
+        - min_time_to_load
+        - max_time_to_load
+        - time_intervals (list of (start, end) Time objects)
         """
-        keep_kernels = []
+        def kernel_is_valid(kernel):
+            # Min/max time checks
+            if self.min_time_to_load and kernel.time_stop <= self.min_time_to_load:
+                return False
+            if self.max_time_to_load and kernel.time_start >= self.max_time_to_load:
+                return False
+
+            # Time intervals check (if defined)
+            if self.time_intervals:
+                # Keep if any interval overlaps
+                for interval_start, interval_end in self.time_intervals:
+                    if kernel.time_stop > interval_start and kernel.time_start < interval_end:
+                        return True
+                return False  # No overlaps
+            return True  # Passed all checks
+
+        new_pool = []
         for kernel in self.kernel_pool:
-            if (self.min_time_to_load is not None and kernel.time_stop <= self.min_time_to_load) or (
-                self.max_time_to_load is not None and kernel.time_start >= self.max_time_to_load
-            ):
+            if kernel_is_valid(kernel):
+                new_pool.append(kernel)
+            else:
                 kernel.unload()
-                continue
-            keep_kernels.append(kernel)
-        self.kernel_pool = keep_kernels
+        self.kernel_pool = new_pool
+
 
     def load_metadata(self):
         response = requests.get(self.base_url)
@@ -734,6 +756,7 @@ class LBLDynamicKernelLoader(DynamicKernelManager):
         prefetch_kernels: int = KERNEL_PREFETCH_COUNT,
         min_time_to_load: Optional[Time] = None,
         max_time_to_load: Optional[Time] = None,
+        time_intervals: Optional[Tuple[Time, Time]] = None,
     ):
         """
         path: local path to dynamic kernel folder
@@ -747,6 +770,7 @@ class LBLDynamicKernelLoader(DynamicKernelManager):
             loading of kernels. Could throw exception once to load it properly, throwing 2 means something went wrong.
             First element of the iterable is reserved for et (placeholder is needed when defining the callbacks)
             (commented out for now, but in case it would be needed, uncommenting the code will bring it back to life)
+        time_intervals: Optional[Tuple[Time, Time]] = None - This is another way of contraining the required time to load (sorted)
         """
         self.metadata_regex = re.compile(metadata_regex)
         super().__init__(
@@ -758,6 +782,7 @@ class LBLDynamicKernelLoader(DynamicKernelManager):
             prefetch_kernels,
             min_time_to_load,
             max_time_to_load,
+            time_intervals,
         )
 
     def parse_kernel_time_bounds(self, filename, url) -> Dict:

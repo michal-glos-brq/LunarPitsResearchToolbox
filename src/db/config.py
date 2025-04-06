@@ -5,10 +5,12 @@ This file serves as a central configuration file for the MongoDB related code, s
 import os
 from src.global_config import HDD_BASE_PATH
 
+MASTER_ID = os.getenv("MASTER_ID", "localhost")
+MONGO_URI = f"mongodb://admin:password@{MASTER_ID}:27017"
 
-MONGO_URI = "mongodb://admin:password@localhost:27017"
-
+# 480-ish minutes of retrying, in case server is not reachable
 MAX_MONGO_RETRIES = 240
+
 
 PIT_ATLAS_DB_NAME = "lro_pits"
 

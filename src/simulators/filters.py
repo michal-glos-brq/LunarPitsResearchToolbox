@@ -33,9 +33,29 @@ class BaseFilter(ABC):
     def rank_point(self, point: np.array) -> float:
         pass
 
+    @classmethod
+    @abstractmethod
+    def from_kwargs_and_kernel_manager(cls, kernel_manager, **kwargs):
+        """
+        This method is used to create a filter instance from the given kernel manager and keyword arguments.
+        It extracts the DSK filename from the kernel manager and uses it to initialize the filter.
+        """
+        raise NotImplementedError("This method should be implemented in subclasses.")
+
 
 class PointFilter(BaseFilter):
     """This filter is used to filter out points that in a treshold distance to points on the lunar surface"""
+
+    @classmethod
+    def from_kwargs_and_kernel_manager(cls, kernel_manager, **kwargs):
+        """
+        This method is used to create a PointFilter instance from the given kernel manager and keyword arguments.
+        It extracts the DSK filename from the kernel manager and uses it to initialize the filter.
+        """
+        dsk_filename = kernel_manager.static_kernels["dsk"][0].filename
+        if kwargs.get("hard_radius") is None:
+            raise ValueError("hard_radius must be provided in kwargs")
+        return cls(kwargs["hard_radius"], dsk_filename)
 
     def __init__(self, hard_radius: float, dsk_filename: str):
         """
@@ -92,6 +112,20 @@ class PointFilter(BaseFilter):
 
 class AreaFilter(BaseFilter):
     """This filter is used to filter out points that are not within a certain area on the lunar surface"""
+
+    @classmethod
+    def from_kwargs_and_kernel_manager(cls, _, **kwargs):
+        """
+        This method is used to create an AreaFilter instance from the given kernel manager and keyword arguments.
+        It extracts the DSK filename from the kernel manager and uses it to initialize the filter.
+        """
+        if kwargs.get("min_lat") is None or kwargs.get("max_lat") is None:
+            raise ValueError("min_lat and max_lat must be provided in kwargs")
+        if kwargs.get("min_lon") is None or kwargs.get("max_lon") is None:
+            raise ValueError("min_lon and max_lon must be provided in kwargs")
+
+        return cls(kwargs["min_lat"], kwargs["max_lat"], kwargs["min_lon"], kwargs["max_lon"])
+
 
     def __init__(self, min_lat: float, max_lat: float, min_lon: float, max_lon: float):
         """

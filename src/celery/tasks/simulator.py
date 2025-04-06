@@ -18,6 +18,8 @@ KERNEL_MANAGER_MAP = {
     "GRAIL": GRAILKernelManager,
 }
 
+# We can lay them out like this, because sanity checks are done further down the line
+# Simulation e.b. works with only one satellite (is checked)
 INSTRUMENT_MAP = {
     "diviner": lro_instruments.DivinerInstrument,
     "lola": lro_instruments.LolaInstrument,
@@ -41,7 +43,6 @@ def run_remote_sensing_simulation(
     end_time_et: float,
     instrument_names: list[str],
     kernel_manager_type: str,
-    keep_dynamic_kernels: bool,
     filter_type: str,
     kernel_manager_kwargs: dict,
     filter_kwargs: dict,
@@ -56,7 +57,6 @@ def run_remote_sensing_simulation(
       - end_time_et (float): End time (ephemeris time) in seconds.
       - instrument_names (list[str]): List of instrument names to simulate.
       - kernel_manager_type (str): Type of kernel manager ('LRO' or 'GRAIL').
-      - keep_dynamic_kernels (bool): Whether to keep dynamic kernels after use.
       - filter_type (str): Filter type ('point' or 'area').
       - kernel_manager_kwargs (dict): Additional parameters for kernel manager instantiation.
       - filter_kwargs (dict): Additional parameters for filter instantiation.
@@ -69,8 +69,8 @@ def run_remote_sensing_simulation(
     logger.info(
         f"Received args: start_time_et={start_time_et}, end_time_et={end_time_et}, "
         f"instrument_names={instrument_names}, kernel_manager_type={kernel_manager_type}, "
-        f"keep_dynamic_kernels={keep_dynamic_kernels}, filter_type={filter_type}, "
         f"kernel_manager_kwargs={kernel_manager_kwargs}, filter_kwargs={filter_kwargs}, "
+        f"filter_type={filter_type}, simulation_name={simulation_name}, "
         f"extra kwargs={kwargs}"
     )
 
@@ -82,7 +82,6 @@ def run_remote_sensing_simulation(
         raise ValueError(f"Invalid time format: {e}")
 
     ### Sanity check
-
     if kernel_manager_type not in KERNEL_MANAGER_MAP:
         raise ValueError(
             f"Unsupported kernel manager: {kernel_manager_type}. Supported types are: {list(KERNEL_MANAGER_MAP.keys())}"
@@ -98,15 +97,14 @@ def run_remote_sensing_simulation(
 
     kernel_manager_kwargs.setdefault("min_required_time", start_time - TimeDelta(10, format="sec"))
     kernel_manager_kwargs.setdefault("max_required_time", end_time + TimeDelta(10, format="sec"))
-    kernel_manager_kwargs.setdefault("keep_dynamic_kernels", keep_dynamic_kernels)
     kernel_manager_kwargs.setdefault("simulation_name", simulation_name)
 
     ### Instantiating and prepare required objects
     kernel_manager = KERNEL_MANAGER_MAP[kernel_manager_type](**kernel_manager_kwargs)
     kernel_manager.activate(start_time)
 
-    filter_obj = FILTER_MAP[filter_type](**filter_kwargs)
 
+    filter_obj = FILTER_MAP[filter_type].from_kwargs_and_kernel_manager(kernel_manager, **filter_kwargs)
     instruments = [INSTRUMENT_MAP[name]() for name in instrument_names]
 
     ### Run the simulation
