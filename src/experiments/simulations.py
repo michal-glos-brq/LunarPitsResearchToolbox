@@ -70,3 +70,34 @@ class LunarPitAtlasMappingLROConfig(BaseSimulationConfig):
     filter_kwargs = {
         "radius_km": 35,
     }
+
+class TestLROShortSimulationConfig(BaseSimulationConfig):
+    experiment_name = "test_lro_short_simulation"
+
+    instrument_names = [
+        "diviner",
+        "lola",
+    ]
+
+    kernel_manager_type = "LRO"
+
+    start_time = Time("2012-07-05T16:50:24.211", format="isot", scale="utc")
+    end_time = Time("2012-07-09T16:50:24.211", format="isot", scale="utc")
+    step_days = 1  # 1 day step -> 4 tasks over 4 days
+
+    kernel_manager_kwargs = {
+        "frame": "MOON_PA_DE440",
+        "detailed": True,
+        "pre_download_kernels": False,
+        "diviner_ck": True,
+        "lroc_ck": False,
+        "pre_load_static_kernels": True,
+        "keep_dynamic_kernels": True,
+    }
+
+    filter_type = "point"
+    filter_kwargs = {
+        "radius_km": 35,
+    }
+
+

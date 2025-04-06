@@ -1,7 +1,7 @@
 import os
 
 ### System level confoguration
-HDD_BASE_PATH = os.environ.get("UTILITY_VOLUME", "/media/mglos/HDD_8TB4/TMP")
+HDD_BASE_PATH = os.environ.get("WORKER_UTILITY_VOLUME", "/app/data")
 
 ## Vanity
 TQDM_NCOLS = 156
@@ -14,4 +14,4 @@ LUNAR_RADIUS = 1737.4  # km
 LUNAR_FRAME = "MOON_PA_DE440"
 
 # If not interactive output, turn off TQDM
-SUPRESS_TQDM = False
+SUPRESS_TQDM = bool(os.environ.get("SUPRESS_TQDM", False))

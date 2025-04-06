@@ -3,8 +3,6 @@ import uuid
 import errno
 import time
 import logging
-import aiofiles
-import aiofiles.os
 
 from filelock import FileLock
 
@@ -115,9 +113,9 @@ class SharedFileUseLock:
                 except Exception:
                     pass
 
-    async def async_try_delete_file(self) -> bool:
+    def async_try_delete_file(self) -> bool:
         """
-        Asynchronously tries to delete the target file if it's not in use.
+        Tries to delete the target file if it's not in use.
         Returns True if file was deleted, False if still in use or not found.
         """
         self.cleanup_stale_locks()
@@ -125,7 +123,7 @@ class SharedFileUseLock:
             return False
 
         try:
-            await aiofiles.os.remove(self.target_path)
+            os.remove(self.target_path)
             logger.debug("Asynchronously deleted unused file: %s", self.target_path)
             return True
         except FileNotFoundError:

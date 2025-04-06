@@ -44,7 +44,7 @@ RUN apt-get update && apt-get install -y \
 RUN locale-gen en_US.UTF-8 && update-locale LANG=en_US.UTF-8
 
 # Copy dependencies, scripts, and source code
-COPY poetry.lock pyproject.toml worker/worker_entrypoint.sh /app/
+COPY poetry.lock pyproject.toml worker_entrypoint.sh /app/
 COPY src /app/src
 
 

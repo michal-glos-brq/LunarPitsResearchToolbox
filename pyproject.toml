@@ -27,6 +27,7 @@ msgpack = "^1.1.0"
 celery = {extras = ["redis"], version = "^5.4.0"}
 aiohttp = "^3.11.13"
 filelock = "^3.18.0"
+aiofiles = "^24.1.0"
 
 [tool.poetry.group.dev.dependencies]
 jupyter = "1.1.1"

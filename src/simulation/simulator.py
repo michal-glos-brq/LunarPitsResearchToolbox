@@ -1,6 +1,6 @@
-import uuid
 import time
 import logging
+import datetime
 from contextlib import nullcontext
 from typing import Optional, List, Dict
 from datetime import timedelta
@@ -356,6 +356,7 @@ class RemoteSensingSimulator:
                 current_task.update_state(
                     state="PROGRESS",
                     meta={
+                        "timestamp": datetime.datetime.utcnow().isoformat(),
                         "state": state,
                         "progress [%]": 100
                         * self.simulation_state.simulation_timekeeper.total_seconds()
@@ -409,6 +410,7 @@ class RemoteSensingSimulator:
         simulation_metadata = {
             "_id": self.simulation_metadata_id,  # Explicit ID
             "simulation_name": self.simulation_name,
+            "task_group_id": self.task_group_id,
             "start_time": self.start_time.utc.iso,
             "end_time": self.end_time.utc.iso,
             "last_logged_time": self.simulation_state.current_simulation_timestamp.utc.iso,
@@ -436,6 +438,7 @@ class RemoteSensingSimulator:
         supress_error_logs: bool = False,
         current_task: Optional[Task] = None,
         simulation_name: Optional[str] = None,
+        task_group_id: Optional[str] = None,
     ):
         """
         :param start_time: Start time of the simulation
@@ -450,6 +453,7 @@ class RemoteSensingSimulator:
         self.simulation_duration_formatted = RemoteSensingSimulator.format_td(self.simulation_duration)
         self.total_seconds = self.simulation_duration.total_seconds()
         self.simulation_name = simulation_name
+        self.task_group_id = task_group_id
 
         # Initialize simulation state.
         self.simulation_state = self.SimulationState(self.kernel_manager, self.instruments[0].satellite_name)

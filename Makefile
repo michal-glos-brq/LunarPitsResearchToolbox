@@ -15,8 +15,10 @@ worker-start:
 	@mkdir -p ${UTILITY_VOLUME}
 	@chmod -R 777 ${UTILITY_VOLUME}
 	@docker run -it --rm \
-		-e WORKER_ID=${WORKER_ID} \
+		--env-file .env \
+		--network=host \
 		-v $(UTILITY_VOLUME):/app/data \
+		-u $(shell id -u):$(shell id -g) \
   		worker || true
 
 format:

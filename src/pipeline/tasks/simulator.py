@@ -2,7 +2,6 @@ from astropy.time import Time, TimeDelta
 import logging
 from typing import Optional
 
-from src.pipeline.app import app
 from src.SPICE.kernel_utils.kernel_management import LROKernelManager, GRAILKernelManager
 from src.SPICE.instruments import lro as lro_instruments
 from src.SPICE.instruments import grail as grail_instruments
@@ -36,7 +35,7 @@ FILTER_MAP = {
 }
 
 
-@app.task(bind=True)
+# @app.task(bind=True)
 def run_remote_sensing_simulation(
     self,
     start_time_et: float,

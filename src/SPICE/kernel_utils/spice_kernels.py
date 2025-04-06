@@ -44,14 +44,12 @@ import random
 import re
 import requests
 import time
-import asyncio
-import aiohttp
 import threading
-import aiofiles
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from urllib.parse import urljoin
 from typing import Optional, List, Dict, Sequence, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from astropy.time import Time
 import spiceypy as spice
@@ -60,14 +58,12 @@ from bs4 import BeautifulSoup as bs
 
 from src.SPICE.kernel_utils.locks import SharedFileUseLock
 from filelock import FileLock
-from src.global_config import TQDM_NCOLS
+from src.global_config import TQDM_NCOLS, SUPRESS_TQDM
 from src.SPICE.config import (
     MAX_LOADED_DYNAMIC_KERNELS,
     MAX_KERNEL_DOWNLOADS,
-    HEADERS,
     MAX_RETRIES,
     SPICE_CHUNK_SIZE,
-    SPICE_READ_TIMEOUT,
     SPICE_TOTAL_TIMEOUT,
     KERNEL_TIME_KEYS,
     SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT,
@@ -111,11 +107,6 @@ class BaseKernel:
         if not self.file_exists:
             self.download_file(self.url, self.filename)
 
-    async def async_ensure_downloaded(self) -> None:
-        """Asynchronously download the kernel with a progress bar update"""
-        if not self.file_exists:
-            await self.async_download_file(self.url, self.filename)
-
     def unload(self) -> None:
         """Unload the kernel from spiceypy"""
         if self._loaded:
@@ -142,7 +133,7 @@ class BaseKernel:
     def delete_file(self) -> None:
         """Delete the file from disk"""
         if self.file_exists:
-            threading.Thread(target=lambda: asyncio.run(self._lock.async_try_delete_file()), daemon=True).start()
+            threading.Thread(target=lambda: self._lock.async_try_delete_file(), daemon=True).start()
             logger.debug("Scheduled async deletion of kernel file %s", self.filename)
         else:
             logger.debug("Attempted to delete non-existing kernel file %s", self.filename)
@@ -208,7 +199,7 @@ class BaseKernel:
 
                     if total_size is None or total_size <= 0:
                         if not corruption:
-                            corruption = True
+                            corruptio = True
                         else:
                             logger.warning(f"File {filename} looks corrupted on remote server {url}")
                             self.corrupted = True
@@ -242,109 +233,6 @@ class BaseKernel:
                         os.remove(temp_path)
                     logger.error("Failed to download %s after %s attempts", url, MAX_RETRIES)
                     return
-
-    async def async_download_file(self, url: str, filename: str) -> None:
-        with FileLock(
-            filename + ".tmp.lock", timeout=SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL
-        ):
-            if not os.path.exists(filename):
-                await self._async_download_file(url, filename)
-
-    async def _async_download_file(self, url: str, filename: str) -> None:
-        """
-        Asynchronously download the file with retries.
-        Resumes download if a temporary file exists and verifies the final file size.
-        """
-        retries = 0
-        temp_path = filename + ".tmp"
-        corruption = False
-
-        while retries < MAX_RETRIES:
-            try:
-                resume_pos = os.path.getsize(temp_path) if os.path.exists(temp_path) else 0
-                headers = {}
-                if resume_pos:
-                    headers["Range"] = f"bytes={resume_pos}-"
-
-                async with aiohttp.ClientSession(
-                    timeout=aiohttp.ClientTimeout(total=SPICE_TOTAL_TIMEOUT, connect=10, sock_connect=10, sock_read=60),
-                    headers=HEADERS,
-                ) as session:
-                    async with session.get(
-                        url, headers=headers, timeout=aiohttp.ClientTimeout(total=SPICE_TOTAL_TIMEOUT)
-                    ) as response:
-                        if response.status == 416:
-                            if os.path.exists(temp_path):
-                                os.remove(temp_path)
-                        response.raise_for_status()
-
-                        # Determine total expected size.
-                        total_size = None
-                        if resume_pos:
-                            cr = response.headers.get("Content-Range")
-                            if cr and "/" in cr:
-                                try:
-                                    total_size = int(cr.split("/")[-1])
-                                except ValueError:
-                                    total_size = None
-                            else:
-                                cl = response.headers.get("Content-Length")
-                                total_size = int(cl) if cl and cl.isdigit() else None
-                            if total_size is None:
-                                logger.warning(
-                                    "Server did not return Content-Range; cannot resume. Restarting download."
-                                )
-                                resume_pos = 0
-                                cl = response.headers.get("Content-Length")
-                                total_size = int(cl) if cl and cl.isdigit() else None
-                        else:
-                            cl = response.headers.get("Content-Length")
-                            total_size = int(cl) if cl and cl.isdigit() else None
-
-                        mode = "ab" if resume_pos else "wb"
-                        async with aiofiles.open(temp_path, mode) as f:
-                            while True:
-                                try:
-                                    chunk = await asyncio.wait_for(
-                                        response.content.read(SPICE_CHUNK_SIZE), timeout=SPICE_READ_TIMEOUT
-                                    )
-                                except asyncio.TimeoutError:
-                                    raise Exception("Stalled during chunk read")
-                                if not chunk:
-                                    break
-                                await f.write(chunk)
-
-                # Verify the file size
-                actual_size = os.path.getsize(temp_path)
-                if total_size is not None and actual_size != total_size:
-                    raise ValueError(f"Size mismatch: expected {total_size} bytes, got {actual_size} bytes")
-                if total_size <= 0:
-                    if not corruption:
-                        corruption = True
-                    else:
-                        self.corrupted = True
-                        logger.warning(f"File {self.filename} looks corrupted on remote server {url}")
-                        if os.path.exists(temp_path):
-                            os.remove(temp_path)
-                        return
-
-                os.rename(temp_path, filename)
-                logger.debug("Successfully downloaded %s", url)
-                return
-
-            except Exception as e:
-                retries += 1
-                logger.debug("Attempt %d failed to download %s: %s", retries, url, e)
-                sleep_time = max((2**retries), 120) + (random.random() * retries)
-                if retries < MAX_RETRIES:
-                    await asyncio.sleep(sleep_time)
-                else:
-                    if os.path.exists(temp_path):
-                        os.remove(temp_path)
-                    logger.error("Failed to download %s after %s attempts", url, MAX_RETRIES)
-                    return
-
-    ### Nesting crime scene end
 
     def __repr__(self):
         return f"<BaseKernel filename='{self.filename}'>"
@@ -392,14 +280,6 @@ class LBLKernel(BaseKernel):
         else:
             logger.debug("Metadata already exists: %s", self.metadata_filename)
 
-    async def async_download_metadata(self) -> None:
-        """Asynchronously download the metadata with a progress bar update"""
-        if not self.metadata_exists:
-            logger.debug("Downloading metadata: %s", self.metadata_filename)
-            await self.async_download_file(self.metadata_url, self.metadata_filename)
-        else:
-            logger.debug("Metadata already exists: %s", self.metadata_filename)
-
     def delete_metadata(self) -> None:
         if os.path.exists(self.metadata_filename):
             os.remove(self.metadata_filename)
@@ -414,18 +294,20 @@ class StaticKernelLoader:
     def __init__(self, kernel_objects: OrderedDict[str, List[BaseKernel]]):
         # We want to aggregate all kernels in one list while retaining its order
         self.kernel_pool = [kernel for kernels in kernel_objects.values() for kernel in kernels]
+        pbar = tqdm(
+            total=len(self.kernel_pool), desc="Downloading static kernels", ncols=TQDM_NCOLS, disable=SUPRESS_TQDM
+        )
 
-        semaphore = asyncio.Semaphore(MAX_KERNEL_DOWNLOADS)
+        def _download_kernel(kernel: BaseKernel, pbar: tqdm) -> None:
+            kernel.ensure_downloaded()
+            pbar.update(1)
 
-        async def download_kernel(kernel: BaseKernel, pbar: tqdm) -> None:
-            async with semaphore:
-                await kernel.async_ensure_downloaded()
-                pbar.update(1)
+        with ThreadPoolExecutor(max_workers=MAX_KERNEL_DOWNLOADS) as executor:
+            futures = [executor.submit(_download_kernel, kernel, pbar) for kernel in self.kernel_pool]
+            for future in as_completed(futures):
+                # Optionally: future.result() to raise exceptions
+                pass
 
-        pbar = tqdm(total=len(self.kernel_pool), desc="Downloading static kernels", ncols=TQDM_NCOLS)
-
-        tasks = [download_kernel(kernel, pbar) for kernel in self.kernel_pool]
-        asyncio.run(asyncio.gather(*tasks))
         pbar.close()
 
     def load(self):
@@ -507,19 +389,17 @@ class LBLDynamicKernel(LBLKernel, TimeBoundKernel):
         self.time_start = None
         self.time_stop = None
 
-    async def get_time_interval(self, semaphore, pbar: tqdm) -> bool:
+    def get_time_interval(self, pbar: tqdm) -> bool:
         """
         Download and parse the .LBL metadata to extract the kernel's valid time interval.
 
         Parameters:
-        - semaphore: Limits concurrent metadata downloads.
         - pbar: Progress bar to update after completion.
 
         Returns:
         - True if time interval was successfully parsed, False otherwise.
         """
-        async with semaphore:
-            await self.async_download_metadata()
+        self.download_metadata()
 
         pattern = re.compile(r"(\S+)\s*=\s*(.+)")
         with open(self.metadata_filename, "r") as f:
@@ -680,20 +560,23 @@ class DynamicKernelManager(ABC):
         """
         Downloads all kernels that are not already on disk
         """
-        semaphore = asyncio.Semaphore(MAX_KERNEL_DOWNLOADS)
 
-        async def download_kernel(kernel: LBLDynamicKernel, pbar: tqdm) -> None:
-            async with semaphore:
-                await kernel.async_ensure_downloaded()
-                pbar.update(1)
+        def download_kernel(kernel: LBLDynamicKernel, pbar: tqdm) -> None:
+            kernel.ensure_downloaded()
+            pbar.update(1)
 
-        pbar = tqdm(total=len(self.kernel_pool), desc="Downloading dynamic kernels", ncols=TQDM_NCOLS)
+        pbar = tqdm(
+            total=len(self.kernel_pool), desc="Downloading dynamic kernels", ncols=TQDM_NCOLS, disable=SUPRESS_TQDM
+        )
 
-        tasks = [download_kernel(kernel, pbar) for kernel in self.kernel_pool]
-        asyncio.run(asyncio.gather(*tasks))
+        with ThreadPoolExecutor(max_workers=MAX_KERNEL_DOWNLOADS) as executor:
+            futures = [executor.submit(download_kernel, kernel, pbar) for kernel in self.kernel_pool]
+            for future in as_completed(futures):
+                future.result()
+
         pbar.close()
 
-    def load_new_kernel(self, _id: int, time: Time) -> None:
+    def load_new_kernel(self, _id: int) -> None:
         """
         Load a new kernel to spiceypy with all needed actions
 
@@ -716,19 +599,21 @@ class DynamicKernelManager(ABC):
 
     def reload_kernels(self, time: Time) -> bool:
         """
-        Reloads kernels for given time
+        Reloads kernels for given time. Return True if a kernel for requested Time is already loaded or found and loaded
         """
-        if self.loaded_kernels and self.loaded_kernels[-1].in_interval(time):
-            return True
-        elif self.active_kernel_id < self.kernel_pool_len - 1 and self.kernel_pool[
-            self.active_kernel_id + 1
-        ].in_interval(time):
-            self.load_new_kernel(self.active_kernel_id + 1, time)
+        for loaded_kernel in self.loaded_kernels[::-1]:
+            if loaded_kernel.in_interval(time):
+                return True
+
+        if self.active_kernel_id < self.kernel_pool_len - 1 and self.kernel_pool[self.active_kernel_id + 1].in_interval(
+            time
+        ):
+            self.load_new_kernel(self.active_kernel_id + 1)
             return True
         else:
             for i, kernel in enumerate(self.kernel_pool):
                 if kernel.in_interval(time):
-                    self.load_new_kernel(i, time)
+                    self.load_new_kernel(i)
                     return True
         return False
 
@@ -817,12 +702,18 @@ class LBLDynamicKernelLoader(DynamicKernelManager):
                 kernel_urls, kernel_filenames, metadata_urls, metadata_filenames
             )
         ]
-        semaphore = asyncio.Semaphore(MAX_KERNEL_DOWNLOADS)
 
-        pbar = tqdm(total=len(self.kernel_pool), desc="Downloading dynamic kernel metadata", ncols=TQDM_NCOLS)
+        pbar = tqdm(
+            total=len(self.kernel_pool),
+            desc="Downloading dynamic kernel metadata",
+            ncols=TQDM_NCOLS,
+            disable=SUPRESS_TQDM,
+        )
 
-        tasks = [kernel.get_time_interval(semaphore, pbar) for kernel in self.kernel_pool]
-        asyncio.run(asyncio.gather(*tasks))
+        with ThreadPoolExecutor(max_workers=MAX_KERNEL_DOWNLOADS) as executor:
+            futures = [executor.submit(kernel.get_time_interval, pbar) for kernel in self.kernel_pool]
+            for future in as_completed(futures):
+                future.result()
 
         pbar.close()
 

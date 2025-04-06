@@ -26,7 +26,7 @@ SPICE_TOTAL_TIMEOUT = 60
 # SPICE kernel file lock timeout
 SPICE_KERNEL_LOCK_TIMEOUT = 60
 SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT = 60 * 10
-DSK_KERNEL_LOCK_TIMEOUT = 60 * 15  # 15 minutes to wait
+DSK_KERNEL_LOCK_TIMEOUT = 60 * 60  # 60 minutes to wait - creation can take some time to finish ...
 # How often to poll for the lock
 KERNEL_LOCK_POLL_INTERVAL = 1
 

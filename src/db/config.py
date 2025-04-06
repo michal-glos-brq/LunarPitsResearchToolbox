@@ -5,8 +5,8 @@ This file serves as a central configuration file for the MongoDB related code, s
 import os
 from src.global_config import HDD_BASE_PATH
 
-MASTER_ID = os.getenv("MASTER_ID", "localhost")
-MONGO_URI = f"mongodb://admin:password@{MASTER_ID}:27017"
+MASTER_IP = os.getenv("MASTER_IP", "host.docker.internal")
+MONGO_URI = f"mongodb://admin:password@{MASTER_IP}:27017"
 
 # 480-ish minutes of retrying, in case server is not reachable
 MAX_MONGO_RETRIES = 240
