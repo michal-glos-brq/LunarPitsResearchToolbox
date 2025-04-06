@@ -3,16 +3,16 @@
 Lunar SPICE Kernel Management System
 ====================================================
 
-Author: Michal Glos  
-Institution: Brno University of Technology (VUT)  
-Faculty: Faculty of Electrical Engineering and Communication (FEKT)  
+Author: Michal Glos
+Institution: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
 Project: Diploma Thesis – Space Applications
 
 Overview:
 ---------
 This module implements a modular and extensible kernel management system
 for the SPICE toolkit, focusing on lunar missions such as LRO and GRAIL.
-It provides structured handling of both static and dynamic kernels, 
+It provides structured handling of both static and dynamic kernels,
 with support for:
 
   • Lunar reference frames (MOON_ME, MOON_PA_DE440)
@@ -23,19 +23,19 @@ with support for:
 
 Architecture:
 -------------
-The core design follows a mixin-based composition, enabling flexible 
+The core design follows a mixin-based composition, enabling flexible
 reusability across different mission configurations. Each mission or
-dataset (e.g., LRO, GRAIL) provides its own mixin that augments the 
+dataset (e.g., LRO, GRAIL) provides its own mixin that augments the
 base `BaseKernelManager` with appropriate static and dynamic kernels.
 
 Classes:
 --------
 • BaseKernelManager:
     Core SPICE loader/unloader with time-bound control.
-    
+
 • LunarKernelManagerMixin:
     Adds universal lunar kernels and configurable DSK model support.
-    
+
 • LROKernelManagerMixin:
     Adds LRO spacecraft-specific instrument, frame, and CK/SPK kernels.
 
@@ -44,14 +44,14 @@ Classes:
 
 Usage:
 ------
-Each final kernel manager class (e.g., `LROKernelManager`) inherits from 
-the base and appropriate mixins, and can be instantiated with various 
-options for dynamic kernel filtering, detailed surface models, and 
+Each final kernel manager class (e.g., `LROKernelManager`) inherits from
+the base and appropriate mixins, and can be instantiated with various
+options for dynamic kernel filtering, detailed surface models, and
 activation time windows.
 
 SPICE Toolkit:
 --------------
-This module is designed to be compatible with `spiceypy` and uses 
+This module is designed to be compatible with `spiceypy` and uses
 NAIF-standard kernels fetched from public and local repositories.
 
 """
@@ -157,11 +157,7 @@ class BaseKernelManager(ABC):
 
 class LunarKernelManagerMixin:
     # spice.furnsh(LUNAR_MODEL["dsk_path"])
-    def setup_lunar_kernels(
-        self,
-        frame: Literal["MOON_ME", "MOON_PA_DE440"] = LUNAR_FRAME,
-        detailed: bool = False
-    ):
+    def setup_lunar_kernels(self, frame: Literal["MOON_ME", "MOON_PA_DE440"] = LUNAR_FRAME, detailed: bool = False):
         """
         You can choose the lunar frame with frame and DSK model - more detailed have to be compiled locally
         """
@@ -388,9 +384,12 @@ class LunarKernelManager(BaseKernelManager, LunarKernelManagerMixin):
         **kwargs,
     ):
         super().__init__(min_required_time=min_required_time, max_required_time=max_required_time)
-        self.setup_lunar_kernels(frame=frame, detailed=detailed, min_required_time=min_required_time, max_required_time=max_required_time)
+        self.setup_lunar_kernels(
+            frame=frame, detailed=detailed, min_required_time=min_required_time, max_required_time=max_required_time
+        )
         if pre_load_static_kernels:
             self.load_static_kernels()
+
 
 class LROKernelManager(BaseKernelManager, LunarKernelManagerMixin, LROKernelManagerMixin):
     def __init__(
@@ -418,6 +417,7 @@ class LROKernelManager(BaseKernelManager, LunarKernelManagerMixin, LROKernelMana
         )
         if pre_load_static_kernels:
             self.load_static_kernels()
+
 
 class GRAILKernelManager(LunarKernelManager):
 

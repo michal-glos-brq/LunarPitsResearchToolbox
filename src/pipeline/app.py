@@ -4,7 +4,7 @@ Here we are defining the celery app, completely
 
 from celery import Celery
 
-from src.celery.config import REDIS_CONNECTION_STRING
+from src.pipeline.config import REDIS_CONNECTION_STRING
 
 app = Celery("worker", broker=REDIS_CONNECTION_STRING, backend=REDIS_CONNECTION_STRING)
 

@@ -7,7 +7,6 @@ import spiceypy as spice
 from src.SPICE.config import IMPLICIT_BORESIGHT, DIVINER_SUBINSTRUMENT_PIXEL_COUNT, LRO_MINIRF_FRAME_STR_ID
 
 
-
 class SubInstrument:
 
     _id: Union[int, str]
@@ -59,7 +58,15 @@ class SubInstrument:
 class ImplicitSubInstrument(SubInstrument):
     """When we do not have instrument kernels for instruments, it has to be configured manually, usually sourcing information from mission SIS files"""
 
-    def __init__(self, _id: str, frame: str, boresight=IMPLICIT_BORESIGHT, bounds=None, transform_frame=None, shape:str = "POINT"):
+    def __init__(
+        self,
+        _id: str,
+        frame: str,
+        boresight=IMPLICIT_BORESIGHT,
+        bounds=None,
+        transform_frame=None,
+        shape: str = "POINT",
+    ):
         """Non-SPICE KERNEL instruments"""
         self._id = _id
         self._base_setup()
@@ -79,7 +86,7 @@ class ImplicitSubInstrument(SubInstrument):
 class DivinerSubInstrument(SubInstrument):
     """
     Diviner has 6 A and 3 B subinstruments. Each subinstrument has 21 pixels
-    
+
     In total 189 subinstruments (pixels) and 9 subinstruments - pixel lines
     Hiearchical structure is nusefull for approximate boresight projections and rough filtering
     """
@@ -87,12 +94,14 @@ class DivinerSubInstrument(SubInstrument):
     # TODO: Doublecheck the B orientation - direction of pixels change with different data sources
     # It is in RDR SIS document for DIVINER
 
-    def __init__(self, naif_id: int, _id: int, pixel_key: Literal["INS-85205_DETECTOR_DIRS_FP_A", "INS-85205_DETECTOR_DIRS_FP_B"]):
+    def __init__(
+        self, naif_id: int, _id: int, pixel_key: Literal["INS-85205_DETECTOR_DIRS_FP_A", "INS-85205_DETECTOR_DIRS_FP_B"]
+    ):
         """
         Single channel of DIVINER instrument
 
         naif_if: int - SPICE index of the instrument channel (Divided into channels (rows of 21 pixels))
-        frame: str - 
+        frame: str -
         """
         super().__init__(naif_id=naif_id)
 
@@ -103,27 +112,29 @@ class DivinerSubInstrument(SubInstrument):
             for i, boresight in enumerate(pixel_boresights)
         ]
 
+
 class MiniRFSubInstrument(ImplicitSubInstrument):
     """
     MiniRF subinstrument implementation.
-    
+
     Since MiniRF does not have a conventional SPICE instrument kernel, we use
     fixed (document-derived) parameters to define its boresight and FOV.
-    
+
     The MRFLRO_DP_SIS document indicates that MiniRF has two modes:
       - S-band: Beam width ~3.6° (across) x 10.8° (along)
       - X-band: Beam width ~1.2° (across) x 3.6° (along)
-    
+
     These are used here to define a rectangular FOV (via four corner vectors).
     For simplicity, we assume that the nominal boresight is [0, 0, 1] in the
     instrument frame, and that a small-angle linear approximation is acceptable.
     """
+
     def __init__(self, channel: str):
         # Use a fixed boresight – in practice this might be refined
         boresight = np.array([0.0, 0.0, 1.0])
         # Set the instrument frame; here we assume "MINIRF" as a placeholder.
         frame = LRO_MINIRF_FRAME_STR_ID
-        
+
         # Select beam widths based on channel.
         # Beam widths are in degrees. For S-band, we have 3.6° (across) and 10.8° (along);
         # for X-band, 1.2° (across) and 3.6° (along).
@@ -133,17 +144,17 @@ class MiniRFSubInstrument(ImplicitSubInstrument):
             across_deg, along_deg = 1.2, 3.6
         else:
             raise ValueError("Channel must be 'S' or 'X'")
-        
+
         # Compute half-angles in radians
         half_across = np.radians(across_deg / 2.0)
-        half_along  = np.radians(along_deg / 2.0)
-        
+        half_along = np.radians(along_deg / 2.0)
+
         # We need two orthogonal directions in the instrument's tangent plane.
         # For simplicity, we assume a default "right" vector and "down" vector.
         # These choices are arbitrary for an implicit definition.
         right = np.array([1.0, 0.0, 0.0])
-        down  = np.array([0.0, -1.0, 0.0])
-        
+        down = np.array([0.0, -1.0, 0.0])
+
         # Compute approximate corner vectors in the instrument frame.
         # For small angles, the perturbed direction can be approximated as:
         #  boresight + (half_across)*right + (half_along)*down,
@@ -157,11 +168,11 @@ class MiniRFSubInstrument(ImplicitSubInstrument):
         corner3 /= np.linalg.norm(corner3)
         corner4 /= np.linalg.norm(corner4)
         bounds = np.array([corner1, corner2, corner3, corner4])
-        
+
         # Now call the ImplicitSubInstrument initializer.
         # (ImplicitSubInstrument expects: _id, frame, boresight, bounds, transform_frame)
         # Here we assume that no additional transformation is required.
         super().__init__(f"minirf-{channel}", frame, boresight=boresight, bounds=bounds)
-        
+
         # Store the channel information for later reference.
         self.channel = channel

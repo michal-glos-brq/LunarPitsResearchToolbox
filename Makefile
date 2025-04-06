@@ -6,7 +6,7 @@
 
 
 scrape-lunar-pit-atlas:
-	@python3 src/scripts/scrape_pit_atlas.py.py
+	@python3 src/manual_scripts/scrape_pit_atlas.py
 
 worker-build:
 	@docker build -f Dockerfile.worker -t worker .
@@ -18,3 +18,12 @@ worker-start:
 		-e WORKER_ID=${WORKER_ID} \
 		-v $(UTILITY_VOLUME):/app/data \
   		worker || true
+
+format:
+	@poetry run black . --quiet
+
+lint:
+	@poetry run pylint src || true
+
+typecheck:
+	@poetry run mypy src || true

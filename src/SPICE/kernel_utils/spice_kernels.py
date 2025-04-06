@@ -142,9 +142,7 @@ class BaseKernel:
     def delete_file(self) -> None:
         """Delete the file from disk"""
         if self.file_exists:
-            threading.Thread(
-                target=lambda: asyncio.run(self._lock.async_try_delete_file()), daemon=True
-            ).start()
+            threading.Thread(target=lambda: asyncio.run(self._lock.async_try_delete_file()), daemon=True).start()
             logger.debug("Scheduled async deletion of kernel file %s", self.filename)
         else:
             logger.debug("Attempted to delete non-existing kernel file %s", self.filename)
@@ -157,7 +155,9 @@ class BaseKernel:
             raise ValueError(f"Size mismatch: expected {expected} bytes, got {actual} bytes")
 
     def download_file(self, url: str, filename: str) -> None:
-        with FileLock(filename + ".tmp.lock", timeout=SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL):
+        with FileLock(
+            filename + ".tmp.lock", timeout=SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL
+        ):
             if not os.path.exists(filename):
                 self._download_file(url, filename)
 
@@ -244,7 +244,9 @@ class BaseKernel:
                     return
 
     async def async_download_file(self, url: str, filename: str) -> None:
-        with FileLock(filename + ".tmp.lock", timeout=SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL):
+        with FileLock(
+            filename + ".tmp.lock", timeout=SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL
+        ):
             if not os.path.exists(filename):
                 await self._async_download_file(url, filename)
 
@@ -621,8 +623,6 @@ class DynamicKernelManager(ABC):
                 # Fire and forget thread to download data, concurrency is solved with file locks already
                 threading.Thread(target=kernel.ensure_downloaded, daemon=True).start()
 
-
-
     def apply_time_interval_kernel_filter(self) -> None:
         """
         Filters the kernel pool based on:
@@ -630,6 +630,7 @@ class DynamicKernelManager(ABC):
         - max_time_to_load
         - time_intervals (list of (start, end) Time objects)
         """
+
         def kernel_is_valid(kernel):
             # Min/max time checks
             if self.min_time_to_load and kernel.time_stop <= self.min_time_to_load:
@@ -653,7 +654,6 @@ class DynamicKernelManager(ABC):
             else:
                 kernel.unload()
         self.kernel_pool = new_pool
-
 
     def load_metadata(self):
         response = requests.get(self.base_url)

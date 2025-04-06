@@ -2,12 +2,12 @@ from astropy.time import Time, TimeDelta
 import logging
 from typing import Optional
 
-from src.celery.app import app
+from src.pipeline.app import app
 from src.SPICE.kernel_utils.kernel_management import LROKernelManager, GRAILKernelManager
 from src.SPICE.instruments import lro as lro_instruments
 from src.SPICE.instruments import grail as grail_instruments
-from src.simulators.simulator import RemoteSensingSimulator
-from src.simulators.filters import PointFilter, AreaFilter
+from src.simulation.simulator import RemoteSensingSimulator
+from src.simulation.filters import PointFilter, AreaFilter
 
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,6 @@ def run_remote_sensing_simulation(
     ### Instantiating and prepare required objects
     kernel_manager = KERNEL_MANAGER_MAP[kernel_manager_type](**kernel_manager_kwargs)
     kernel_manager.activate(start_time)
-
 
     filter_obj = FILTER_MAP[filter_type].from_kwargs_and_kernel_manager(kernel_manager, **filter_kwargs)
     instruments = [INSTRUMENT_MAP[name]() for name in instrument_names]

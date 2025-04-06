@@ -13,8 +13,8 @@ from src.global_config import HDD_BASE_PATH
 
 
 ### Limit concurrent kernel downloads
-MAX_KERNEL_DOWNLOADS = 12 # For one worker/process, no system level orchestration
-KERNEL_PREFETCH_COUNT = 1 # This is the most efficient setting
+MAX_KERNEL_DOWNLOADS = 12  # For one worker/process, no system level orchestration
+KERNEL_PREFETCH_COUNT = 1  # This is the most efficient setting
 MAX_LOADED_DYNAMIC_KERNELS = 3
 KEEP_DYNAMIC_KERNELS = False
 
@@ -26,7 +26,7 @@ SPICE_TOTAL_TIMEOUT = 60
 # SPICE kernel file lock timeout
 SPICE_KERNEL_LOCK_TIMEOUT = 60
 SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT = 60 * 10
-DSK_KERNEL_LOCK_TIMEOUT = 60 * 15 # 15 minutes to wait
+DSK_KERNEL_LOCK_TIMEOUT = 60 * 15  # 15 minutes to wait
 # How often to poll for the lock
 KERNEL_LOCK_POLL_INTERVAL = 1
 
@@ -47,7 +47,6 @@ HEADERS = {
     "Connection": "keep-alive",
     "Upgrade-Insecure-Requests": "1",
 }
-
 
 
 ##########################################################################################
@@ -100,9 +99,9 @@ DSK_FILE_CENTER_BODY_ID = 301  # NAIF ID for the Moon
 DSK_FILE_SURFACE_ID = 1001  # Arbitrary surface ID
 
 FINSCL = 6.9  # Fine voxel scale
-CORSCL = 9    # Coarse voxel scale
+CORSCL = 9  # Coarse voxel scale
 WORKSZ = 400_000_000
-VOXPSZ = 45_000_000   # Voxel-plate pointer array size
+VOXPSZ = 45_000_000  # Voxel-plate pointer array size
 VOXLSZ = 135_000_000  # Voxel-plate list array size
 SPXISZ = 1_250_000_000  # Spatial index size
 MAKVTL = True

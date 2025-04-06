@@ -119,8 +119,9 @@ class DetailedModelDSKKernel(BaseKernel):
         self.tif_scale_percents = tif_sample_rate * 100
         super().__init__(LUNAR_TIF_DATA_URL, filename)
 
-
-        with FileLock(self.filename + ".lock", timeout=DSK_KERNEL_LOCK_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL):
+        with FileLock(
+            self.filename + ".lock", timeout=DSK_KERNEL_LOCK_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL
+        ):
             # If the DSK model does not exist
             if not self.file_exists:
                 # First look whether the model is existing remotely
@@ -174,15 +175,18 @@ class DetailedModelDSKKernel(BaseKernel):
             total_size = int(r.headers.get("content-length", 0))  # Get file size
             block_size = 1024 * 1024  # 1 MB chunks
 
-            with open(self.filename, "wb") as f, tqdm(
-                total=total_size,
-                unit="B",
-                unit_scale=True,
-                unit_divisor=1024,
-                ncols=TQDM_NCOLS,
-                desc=f"Downloading DSK from BunnyCDN",
-                miniters=1,  # Ensures frequent updates
-            ) as t:
+            with (
+                open(self.filename, "wb") as f,
+                tqdm(
+                    total=total_size,
+                    unit="B",
+                    unit_scale=True,
+                    unit_divisor=1024,
+                    ncols=TQDM_NCOLS,
+                    desc=f"Downloading DSK from BunnyCDN",
+                    miniters=1,  # Ensures frequent updates
+                ) as t,
+            ):
                 for chunk in r.iter_content(block_size):
                     if chunk:  # Filter out keep-alive chunks
                         f.write(chunk)
@@ -193,15 +197,18 @@ class DetailedModelDSKKernel(BaseKernel):
             r.raise_for_status()
             total_size = int(r.headers.get("content-length", 0))
             block_size = 1024**2  # 1 MB
-            with open(self.tif_filename, "wb") as f, tqdm(
-                total=total_size,
-                unit="B",
-                unit_scale=True,
-                unit_divisor=1024,
-                ncols=TQDM_NCOLS,
-                desc="Downloading TIF file",
-                miniters=1,  # Ensure the progress bar updates frequently
-            ) as t:
+            with (
+                open(self.tif_filename, "wb") as f,
+                tqdm(
+                    total=total_size,
+                    unit="B",
+                    unit_scale=True,
+                    unit_divisor=1024,
+                    ncols=TQDM_NCOLS,
+                    desc="Downloading TIF file",
+                    miniters=1,  # Ensure the progress bar updates frequently
+                ) as t,
+            ):
                 for chunk in r.iter_content(block_size):
                     if chunk:  # Filter out keep-alive new chunks
                         f.write(chunk)

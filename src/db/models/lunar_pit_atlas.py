@@ -2,7 +2,6 @@
 This file implements pydantic models for mongo collections containing Lunar Pit Atlas data.
 """
 
-
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 

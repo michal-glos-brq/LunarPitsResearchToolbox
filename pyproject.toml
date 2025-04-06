@@ -43,8 +43,15 @@ jupyterlab-git = "0.51.0"
 jupyterlab-pygments = "0.3.0"
 jupyterlab-server = "2.27.3"
 jupyterlab-widgets = "3.0.13"
+black = "^25.1.0"
+pylint = "^3.3.6"
+mypy = "^1.15.0"
 
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 120
+target-version = ["py39"]

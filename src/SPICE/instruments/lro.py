@@ -2,10 +2,16 @@ import logging
 
 from src.SPICE.instruments.instrument import BaseInstrument
 from src.SPICE.instruments.subinstruments import DivinerSubInstrument, SubInstrument, MiniRFSubInstrument
-from src.SPICE.config import DIVINER_SUBINSTRUMENTS, LOLA_INSTRUMENT_IDS, LRO_STR_ID, MINI_RF_CHANNELS, LROC_NAC_IDS, LROC_WAC_IDS
+from src.SPICE.config import (
+    DIVINER_SUBINSTRUMENTS,
+    LOLA_INSTRUMENT_IDS,
+    LRO_STR_ID,
+    MINI_RF_CHANNELS,
+    LROC_NAC_IDS,
+    LROC_WAC_IDS,
+)
 
 logger = logging.getLogger(__name__)
-
 
 
 class DivinerInstrument(BaseInstrument):
@@ -27,14 +33,14 @@ class DivinerInstrument(BaseInstrument):
     def sub_instruments(self):
         if self._sub_instruments is None:
             # Initialize sub_instruments only once
-            self._sub_instruments = [DivinerSubInstrument(naif_id, _id, pixel_key) for naif_id, _id, pixel_key in DIVINER_SUBINSTRUMENTS]
+            self._sub_instruments = [
+                DivinerSubInstrument(naif_id, _id, pixel_key) for naif_id, _id, pixel_key in DIVINER_SUBINSTRUMENTS
+            ]
         return self._sub_instruments
-    
-
 
 
 class LolaInstrument(BaseInstrument):
-    
+
     name = "LOLA"
     satellite_name = LRO_STR_ID
     # LRO spacecraft attitude frame
@@ -44,13 +50,13 @@ class LolaInstrument(BaseInstrument):
     _height = 340
 
     _sub_instruments = None
+
     @property
     def sub_instruments(self):
         if self._sub_instruments is None:
             # Initialize sub_instruments only once
             self._sub_instruments = [SubInstrument(naif_id) for naif_id in LOLA_INSTRUMENT_IDS]
         return self._sub_instruments
-
 
 
 class MiniRFInstrument(BaseInstrument):
@@ -65,6 +71,7 @@ class MiniRFInstrument(BaseInstrument):
     _height = 300
 
     _sub_instruments = None
+
     @property
     def sub_instruments(self):
         if self._sub_instruments is None:
@@ -82,6 +89,7 @@ class LROCNACInstrument(BaseInstrument):
     Each subinstrument’s FOV and distortion parameters are retrieved
     via spice.getfov using the instrument kernel.
     """
+
     STATIC_INSTRUMENT = False
     name = "LROC_NAC"
     satellite_name = LRO_STR_ID
@@ -92,6 +100,7 @@ class LROCNACInstrument(BaseInstrument):
     _height = 220
 
     _sub_instruments = None
+
     @property
     def sub_instruments(self):
         if self._sub_instruments is None:
@@ -109,6 +118,7 @@ class LROCWACInstrument(BaseInstrument):
       - UV:  -85641, -85642
     They are collected here as subinstruments.
     """
+
     STATIC_INSTRUMENT = False
     name = "LROC_WAC"
     satellite_name = LRO_STR_ID
@@ -118,6 +128,7 @@ class LROCWACInstrument(BaseInstrument):
     _height = 250
 
     _sub_instruments = None
+
     @property
     def sub_instruments(self):
         if self._sub_instruments is None:

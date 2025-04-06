@@ -56,7 +56,9 @@ PIT_TABLE_COLUMNS = [
 ]
 
 
-async def async_fetch_with_retries(session: aiohttp.ClientSession, url: str, REQUEST_MAX_RETRIES: int = 10, pbar: tqdm = None):
+async def async_fetch_with_retries(
+    session: aiohttp.ClientSession, url: str, REQUEST_MAX_RETRIES: int = 10, pbar: tqdm = None
+):
     sleep_time = 10  # Initial delay.
     for _ in range(REQUEST_MAX_RETRIES):
         try:
@@ -132,8 +134,7 @@ def parse_details_and_images(divs, row_name: str):
     detail_table = divs[0].find("table")
     detail_rows = detail_table.find_all("tr")
     parsed_details = {
-        detail.find("th").text.strip().replace(".", "").replace(" ", "_").lower():
-            detail.find("td").text.strip()
+        detail.find("th").text.strip().replace(".", "").replace(" ", "_").lower(): detail.find("td").text.strip()
         for detail in detail_rows[1:]
     }
     parsed_details["origin"] = detail_rows[0].find("th").text.strip().split(":")[0].strip()
@@ -185,6 +186,7 @@ def insert_parsed_records(records: List[Dict], collection, model_class):
         collection.insert_many(parsed_objects, ordered=False)
     pbar.close()
 
+
 async def process_detail_page(row: Dict, session: aiohttp.ClientSession, pbar: tqdm = None):
     detail_url = f"{PIT_ATLAS_BASE_URL}{row['link_suffix']}"
     resp, text = await async_fetch_with_retries(session, detail_url, pbar=pbar)
@@ -229,7 +231,9 @@ async def scrape_and_parse_lunar_pits():
         detail_data = []
         image_data = []
         tasks = []
-        pbar_details = tqdm(total=general_df.shape[0], desc="Fetching Details", dynamic_ncols=True, leave=True, file=sys.stderr)
+        pbar_details = tqdm(
+            total=general_df.shape[0], desc="Fetching Details", dynamic_ncols=True, leave=True, file=sys.stderr
+        )
         # Create async tasks for each detail page, sharing the session.
         for _, row in general_df.iterrows():
             tasks.append(process_detail_page(row, session, pbar=pbar_details))

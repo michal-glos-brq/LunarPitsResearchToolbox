@@ -126,7 +126,6 @@ class AreaFilter(BaseFilter):
 
         return cls(kwargs["min_lat"], kwargs["max_lat"], kwargs["min_lon"], kwargs["max_lon"])
 
-
     def __init__(self, min_lat: float, max_lat: float, min_lon: float, max_lon: float):
         """
         Defining an aread on the lunar surface in the simplest possible manner

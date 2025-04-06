@@ -82,9 +82,7 @@ dtypes = {
 
 class DivinerRDRDataFetcher(BaseFetcher):
 
-
     name: str = "DIVINER_RDR"
-
 
     def process_raw_file(self, request_content: bytes, datafile: DataFile) -> List[Dict]:
         # Extract in-memory without writing to disk

@@ -1,7 +1,3 @@
-
-
-
-
 from abc import ABC, abstractmethod
 import logging
 import gc
@@ -21,8 +17,7 @@ from src.config import TIME_STEP
 from src.db.mongo.interface import Sessions
 
 
-
-BASE_MARGIN = 3 # Km - For lunar model misalignment
+BASE_MARGIN = 3  # Km - For lunar model misalignment
 
 
 class DataFile:
@@ -43,7 +38,6 @@ class BaseFetcher:
         self.load_timewindows()
         self.load_datafiles()
 
-
     @abstractmethod
     @property
     def name(self) -> str:
@@ -62,7 +56,6 @@ class BaseFetcher:
         """Once the whole data file is downloaded, here is processed and filtered based on timewindows"""
         ...
 
-
     @property
     def file_download_timeout(self) -> int:
         """Can be overwritten if needed"""
@@ -71,23 +64,13 @@ class BaseFetcher:
     @property
     def simulation_point_timedelta_upper_bound(self) -> timedelta:
         """Maximal time distance difference between 2 simulation steps to be considered as continuous capture"""
-        return timedelta(s=(TIME_STEP * 2)) # Seems like reasonable default value
-
+        return timedelta(s=(TIME_STEP * 2))  # Seems like reasonable default value
 
     @staticmethod
     def get_rough_treshold_margin(self):
         pipeline = [
-            {
-                "$match": {
-                    "meta.max_bound_distance": {"$exists": True}
-                }
-            },
-            {
-                "$group": {
-                    "_id": None,
-                    "max_max_bound_distance": {"$max": "$meta.max_bound_distance"}
-                }
-            }
+            {"$match": {"meta.max_bound_distance": {"$exists": True}}},
+            {"$group": {"_id": None, "max_max_bound_distance": {"$max": "$meta.max_bound_distance"}}},
         ]
 
         # Execute the aggregation
@@ -98,14 +81,16 @@ class BaseFetcher:
 
     def load_timewindows(self):
         """Get time windows for a given collection and threshold
-        
+
         The distance attribute in timeseries is rough and is computed as distance of the closest area of interest
-        to projection to the lunar surface of mean instrument boresight. Ideally the treshold 
+        to projection to the lunar surface of mean instrument boresight. Ideally the treshold
         """
-        timestamps = list(self.simulation_collection.find(
-            {"distance": {"$lt": self.rough_threshold}},  # Filter condition
-            {"timestamp_utc": 1, "_id": 0}  # Projection to return only timestamp_utc
-        ).sort("timestamp_utc", 1))  # Sorting in ascending order
+        timestamps = list(
+            self.simulation_collection.find(
+                {"distance": {"$lt": self.rough_threshold}},  # Filter condition
+                {"timestamp_utc": 1, "_id": 0},  # Projection to return only timestamp_utc
+            ).sort("timestamp_utc", 1)
+        )  # Sorting in ascending order
 
         self.timestamp_list = [doc["timestamp_utc"] for doc in timestamps]
 
@@ -118,16 +103,15 @@ class BaseFetcher:
                 timestamp_clusters[-1].append(timestamp)
         self.flagged_data_intervals = [(_t[0], _t[-1]) for _t in timestamp_clusters]
 
-
     def download_and_load(self, url, processing_semaphore, retries=16, backoff_factor=2):
         """Download and extract ZIP in-memory with retry mechanism."""
-            # Set up a session with retry logic
+        # Set up a session with retry logic
         session = requests.Session()
         retry_strategy = Retry(
             total=retries,
             backoff_factor=backoff_factor,
             status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["HEAD", "GET", "OPTIONS"]
+            allowed_methods=["HEAD", "GET", "OPTIONS"],
         )
         adapter = HTTPAdapter(max_retries=retry_strategy)
         session.mount("http://", adapter)
@@ -167,37 +151,44 @@ class BaseFetcher:
                 pbar.update(1)  # Update progress bar
 
                 # Kill old threads
-                for thread_id in range(len(threads)-1, -1, -1):
+                for thread_id in range(len(threads) - 1, -1, -1):
                     if not threads[thread_id].is_alive():
                         threads[thread_id].join()
                         threads.pop(thread_id)
-    
+
         for thread in threads:
             thread.join()
-
 
     def process_datafile(self, datafile: DataFile, result_queue, download_semaphore, processing_semaphore) -> None:
         """Process and filter one data file"""
         if not datafile.timewindows:
-            result_queue.put({"error": {
-                "timestamp_utc": datetime.now(),
-                "error": "No timewindows for datafile",
-                "meta": {"datafile": datafile.name, "url": datafile.url}
-            }})
-        
+            result_queue.put(
+                {
+                    "error": {
+                        "timestamp_utc": datetime.now(),
+                        "error": "No timewindows for datafile",
+                        "meta": {"datafile": datafile.name, "url": datafile.url},
+                    }
+                }
+            )
+
         try:
             with download_semaphore:
                 data = self.download_and_load(datafile.url, processing_semaphore)
-            
+
             if data:
                 result_queue.put({"data": data})
 
         except Exception as e:
-            result_queue.put({"error": {
-                "timestamp_utc": datetime.now(),
-                "error": str(e),
-                "meta": {"datafile": datafile.name, "url": datafile.url}
-            }})
+            result_queue.put(
+                {
+                    "error": {
+                        "timestamp_utc": datetime.now(),
+                        "error": str(e),
+                        "meta": {"datafile": datafile.name, "url": datafile.url},
+                    }
+                }
+            )
         finally:
             # We don't know when it failed, hence anything below could fail too
             try:
@@ -212,7 +203,7 @@ class BaseFetcher:
         manager = mp.Manager()
         # Into result queue - will be put filtered data evenets and failure events
         result_queue = manager.Queue()
-    
+
         # Semaphores
         download_sem = mp.BoundedSemaphore(MAX_DATA_DOWNLOADS)
         processing_sem = mp.BoundedSemaphore(MAX_PROCESSES)
@@ -222,7 +213,9 @@ class BaseFetcher:
 
         processes = []
         for datafile in datafiles:
-            process = mp.Process(target=self.process_datafile, args=(datafile, result_queue, download_sem, processing_sem))
+            process = mp.Process(
+                target=self.process_datafile, args=(datafile, result_queue, download_sem, processing_sem)
+            )
             process.start()
             processes.append(process)
 
@@ -236,7 +229,6 @@ class BaseFetcher:
         # Wait for all remaining processes to finish
         for proc in processes:
             proc.join()
-
 
         # Stop DB process
         result_queue.put(None)  # Signal end of queue

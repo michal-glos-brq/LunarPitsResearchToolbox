@@ -3,8 +3,7 @@
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Dict, Union, Tuple
-from functools import lru_cache, partial
+from typing import List, Tuple
 
 import numpy as np
 import spiceypy as spice
@@ -77,7 +76,7 @@ class BaseInstrument(ABC):
     def recalculate_bounds_to_boresight_distance(self, et: float = 0) -> np.array:
         """
         Recalculates distance from boresight to bounds
-        
+
         So we can add this to the distance from point of interest and with point of interest and projected boresight -
             we can tell wether instrument FOV is intersecting the point of interest
         """
@@ -88,13 +87,14 @@ class BaseInstrument(ABC):
         # projected_bounds = np.stack([self.project_vector(et, bnd).projection for bnd in self.bounds(et)])
         return np.linalg.norm(projected_bounds - projection, axis=1).max()
 
-
     ### Boresight and bounds assume subinstruments are normalized into the same frame
     def boresight(self, et: float = 0) -> np.array:
         """Boresight vector for the instrument"""
         if self._static_boresight is None:
             # Arbitrary choose the first frame - those frames are static relative to boresights
-            self._static_boresight_frame = self.sub_instruments[0].sub_instrument_frame if not self.STATIC_INSTRUMENT else self.frame
+            self._static_boresight_frame = (
+                self.sub_instruments[0].sub_instrument_frame if not self.STATIC_INSTRUMENT else self.frame
+            )
             boresights = []
             for sub_instr in self.sub_instruments:
                 boresights.append(sub_instr.transformed_boresight(self._static_boresight_frame, et=et))
@@ -106,12 +106,13 @@ class BaseInstrument(ABC):
             # Use first subinstrument to calculate the transformation
             return self.sub_instruments[0].transform_vector(self.frame, self._static_boresight, et)
 
-
     def bounds(self, et: float = 0) -> np.array:
         """Bounds of the instrument"""
         if self._static_bounds is None:
             # Arbitrary choose the first frame - those frames are static relative to boresights
-            self._static_bounds_frame = self.sub_instruments[0].sub_instrument_frame if not self.STATIC_INSTRUMENT else self.frame
+            self._static_bounds_frame = (
+                self.sub_instruments[0].sub_instrument_frame if not self.STATIC_INSTRUMENT else self.frame
+            )
             bounds = []
             for sub_instr in self.sub_instruments:
                 bounds.append(sub_instr.transformed_bounds(self._static_bounds_frame, et=et))
@@ -119,7 +120,9 @@ class BaseInstrument(ABC):
         if self.STATIC_INSTRUMENT:
             return self._static_bounds
         else:
-            return np.stack([self.sub_instruments[0].transform_vector(self.frame, bnd, et) for bnd in self._static_bounds]).reshape(-1, 3)
+            return np.stack(
+                [self.sub_instruments[0].transform_vector(self.frame, bnd, et) for bnd in self._static_bounds]
+            ).reshape(-1, 3)
 
     def project_vector(self, et, vector) -> np.array:
         """

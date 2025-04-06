@@ -16,8 +16,8 @@ from threading import Thread
 from src.SPICE.kernel_utils.kernel_management import BaseKernelManager
 from src.SPICE.instruments.instrument import BaseInstrument, ProjectionPoint
 from src.db.interface import Sessions
-from src.simulators.filters import BaseFilter
-from src.simulators.config import (
+from src.simulation.filters import BaseFilter
+from src.simulation.config import (
     SIMULATION_STEP,
     DYNAMIC_MAX_BUFFER_FOV_WIDTH_SIZE,
     DYNAMIC_MAX_BUFFER_FOV_WIDTH_UPDATE_RATE,
@@ -401,9 +401,8 @@ class RemoteSensingSimulator:
                 )
                 self.threads.append(thread)
                 instrument_state.failed_computation_batch = []
-            
-            self.check_threads()
 
+            self.check_threads()
 
     def create_metadata_record(self):
         self.simulation_metadata_id = ObjectId()

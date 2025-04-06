@@ -93,7 +93,6 @@ class Sessions:
         Sessions.sessions[db_name] = Sessions.client[db_name]
         return Sessions.sessions[db_name]
 
-
     @staticmethod
     def reconnect_collection(collection):
         """
@@ -103,7 +102,6 @@ class Sessions:
         collection_name = collection.name
         session = Sessions.get_db_session(db_name)
         return session[collection_name]
-
 
     @staticmethod
     def get_all_pits_points():
@@ -173,7 +171,6 @@ class Sessions:
                 pass
 
         failed_collection = session[failed_collection_name]
-
 
         for index in indices:
             positive_collection.create_index(index)
