@@ -55,6 +55,7 @@ def main():
     )
     parser.add_argument("--config-name", help="Name of the experiment config to use.")
     parser.add_argument("--dry-run", action="store_true", help="Run in dry run mode (no actual tasks will be submitted).")
+    parser.add_argument("--name", help="Name of the experiment config to use.")
     args = parser.parse_args()
 
     try:

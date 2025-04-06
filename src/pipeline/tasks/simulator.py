@@ -98,7 +98,6 @@ def run_remote_sensing_simulation(
 
     kernel_manager_kwargs.setdefault("min_required_time", start_time - TimeDelta(10, format="sec"))
     kernel_manager_kwargs.setdefault("max_required_time", end_time + TimeDelta(10, format="sec"))
-    kernel_manager_kwargs.setdefault("simulation_name", simulation_name)
 
     ### Instantiating and prepare required objects
     kernel_manager = KERNEL_MANAGER_MAP[kernel_manager_type](**kernel_manager_kwargs)
@@ -117,6 +116,7 @@ def run_remote_sensing_simulation(
             interactive_progress=False,
             current_task=self,
             supress_error_logs=True,
+            simulation_name=simulation_name,
             task_group_id=str(uuid.uuid4()),
         )
     except Exception as e:
