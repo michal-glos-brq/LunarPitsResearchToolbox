@@ -60,7 +60,7 @@ from abc import ABC
 from typing import List, Literal
 from collections import OrderedDict
 
-from astropy.time import Time
+from astropy.time import Time, TimeDelta
 
 from src.SPICE.config import (
     TIF_SAMPLE_RATE,
@@ -151,9 +151,8 @@ class BaseKernelManager(ABC):
         Activate the kernel manager for given datetime
         """
         self.load_static_kernels()
-        if not self.step(self.min_loaded_time if activation_time is None else activation_time):
-            raise ValueError("Some of dynamic SPICE kernels were not loaded for required time")
-
+        min_time = self.min_loaded_time if activation_time is None else activation_time
+        self.step(min_time)
 
 class LunarKernelManagerMixin:
     # spice.furnsh(LUNAR_MODEL["dsk_path"])
