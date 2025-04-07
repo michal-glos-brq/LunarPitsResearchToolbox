@@ -8,6 +8,7 @@ A lot of redundant and overly-specific  use cases to general use case functional
 import time
 import logging
 import queue
+import random
 import threading
 from typing import List
 
@@ -142,36 +143,37 @@ class Sessions:
         positive_collection_name = f"{instrument_name}"
         failed_collection_name = f"{instrument_name}_failed"
 
-        if positive_collection_name not in session.list_collection_names():
-            try:
-                session.create_collection(
-                    positive_collection_name,
-                    timeseries={
-                        "timeField": "timestamp_utc",  # Ephemeris time as float
-                        "metaField": "meta",  # Optional metadata
-                        "granularity": "seconds",  # Adjust based on data density
-                    },
-                )
-            except errors.CollectionInvalid:
-                pass  # Collection already exists
+        def create_timeseries_collection(name):
+            for attempt in range(3):
+                try:
+                    session.create_collection(
+                        name,
+                        timeseries={
+                            "timeField": "timestamp_utc",
+                            "metaField": "meta",
+                            "granularity": "seconds",
+                        },
+                    )
+                    break  # Success
+                except errors.CollectionInvalid:
+                    break  # Collection already exists
+                except errors.OperationFailure as e:
+                    if e.code == 48:  # NamespaceExists
+                        break
+                    elif attempt < 2:
+                        time.sleep(0.1 + random.random() * 0.2)
+                        continue
+                    else:
+                        raise
+
+        # Create positive and failed collections safely
+        create_timeseries_collection(positive_collection_name)
+        create_timeseries_collection(failed_collection_name)
 
         positive_collection = session[positive_collection_name]
-
-        if failed_collection_name not in session.list_collection_names():
-            try:
-                session.create_collection(
-                    failed_collection_name,
-                    timeseries={
-                        "timeField": "timestamp_utc",  # Ephemeris time as float
-                        "metaField": "meta",  # Optional metadata
-                        "granularity": "seconds",  # Adjust based on data density
-                    },
-                )
-            except errors.CollectionInvalid:
-                pass
-
         failed_collection = session[failed_collection_name]
 
+        # Index creation is idempotent; safe to run always
         for index in indices:
             positive_collection.create_index(index)
             failed_collection.create_index(index)
