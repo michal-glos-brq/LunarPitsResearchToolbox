@@ -101,7 +101,7 @@ def run_remote_sensing_simulation(
 
     ### Instantiating and prepare required objects
     kernel_manager = KERNEL_MANAGER_MAP[kernel_manager_type](**kernel_manager_kwargs)
-    start_time = kernel_manager.activate(start_time)
+    kernel_manager.activate(start_time)
 
     filter_obj = FILTER_MAP[filter_type].from_kwargs_and_kernel_manager(kernel_manager, **filter_kwargs)
     instruments = [INSTRUMENT_MAP[name]() for name in instrument_names]
