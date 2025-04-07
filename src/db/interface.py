@@ -72,27 +72,34 @@ class Sessions:
         If the session does not already exist, it is created.
         If the database is new, a temporary collection is created and dropped.
         """
-        if Sessions.client is None or not Sessions.is_client_alive(Sessions.client):
-            Sessions.client = MongoClient(
-                MONGO_URI,
-                serverSelectionTimeoutMS=5000,
-                socketTimeoutMS=10000,
-                connectTimeoutMS=5000,
-                retryWrites=True,
-                retryReads=True,
-                maxPoolSize=20,
-            )
+        for i in range(MAX_MONGO_RETRIES):
+            try:
+                if Sessions.client is None or not Sessions.is_client_alive(Sessions.client):
+                    Sessions.client = MongoClient(
+                        MONGO_URI,
+                        serverSelectionTimeoutMS=5000,
+                        socketTimeoutMS=10000,
+                        connectTimeoutMS=5000,
+                        retryWrites=True,
+                        retryReads=True,
+                        maxPoolSize=20,
+                    )
 
-        if hasattr(Sessions.sessions, db_name):
-            return Sessions.sessions[db_name]
+                if hasattr(Sessions.sessions, db_name):
+                    return Sessions.sessions[db_name]
 
-        if db_name not in Sessions.client.list_database_names():
-            # Create and immediately drop a temporary collection to initialize the database.
-            Sessions.client[db_name].create_collection("_placeholder_collection")
-            Sessions.client[db_name]["_placeholder_collection"].drop()
+                if db_name not in Sessions.client.list_database_names():
+                    # Create and immediately drop a temporary collection to initialize the database.
+                    Sessions.client[db_name].create_collection("_placeholder_collection")
+                    Sessions.client[db_name]["_placeholder_collection"].drop()
 
-        Sessions.sessions[db_name] = Sessions.client[db_name]
-        return Sessions.sessions[db_name]
+                Sessions.sessions[db_name] = Sessions.client[db_name]
+                return Sessions.sessions[db_name]
+            except Exception as e:
+                logging.error("Failed to connect to MongoDB: %s", e)
+                if i < MAX_MONGO_RETRIES - 1:
+                    time.sleep(5 * random.random())
+            
 
     @staticmethod
     def reconnect_collection(collection):
