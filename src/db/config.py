@@ -23,7 +23,7 @@ IMG_BASE_FOLDER = os.path.join(HDD_BASE_PATH, "MONGO", "PITS_IMAGES")
 
 
 ### Simulation data
-SIMULATION_DB_NAME = "astro-simulation"
+SIMULATION_DB_NAME = "simulationDB"
 SIMULATION_POINTS_COLLECTION = "simulation_points"
 
 SIMULATION_METADATA_COLLECTION = "simulation_metadata"

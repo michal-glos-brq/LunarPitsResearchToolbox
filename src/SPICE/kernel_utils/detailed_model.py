@@ -68,7 +68,7 @@ from src.SPICE.config import (
     root_path,
     generic_url,
 )
-from src.global_config import LUNAR_FRAME, HDD_BASE_PATH
+from src.global_config import LUNAR_FRAME, HDD_BASE_PATH, SUPRESS_TQDM
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +185,7 @@ class DetailedModelDSKKernel(BaseKernel):
                     ncols=TQDM_NCOLS,
                     desc=f"Downloading DSK from BunnyCDN",
                     miniters=1,  # Ensures frequent updates
+                    disable=SUPRESS_TQDM,
                 ) as t,
             ):
                 for chunk in r.iter_content(block_size):
@@ -207,6 +208,7 @@ class DetailedModelDSKKernel(BaseKernel):
                     ncols=TQDM_NCOLS,
                     desc="Downloading TIF file",
                     miniters=1,  # Ensure the progress bar updates frequently
+                    disable=SUPRESS_TQDM,
                 ) as t,
             ):
                 for chunk in r.iter_content(block_size):

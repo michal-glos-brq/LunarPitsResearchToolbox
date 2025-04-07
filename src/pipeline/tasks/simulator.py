@@ -120,17 +120,19 @@ def run_remote_sensing_simulation(
             task_group_id=str(uuid.uuid4()),
         )
     except Exception as e:
-        logger.error(f"Simulation failed: {e}")
+        logger.error(f"Simulation failed: {e}", exc_info=True)
         if self:
             self.update_state(
                 state="FAILURE",
                 meta={
                     "error": str(e),
+                    "exc_type": e.__class__.__name__,
+                    "exc_message": str(e),
                     "start_time": start_time.utc.iso,
                     "end_time": end_time.utc.iso,
                 },
             )
-        raise e
+        raise
     finally:
         kernel_manager.unload_all()
 

@@ -9,5 +9,5 @@ SUPRESS_TQDM=1
 echo "🚀 Launching Celery worker with ID: $WORKER_ID"
 
 . venv/bin/activate
-celery -A src.pipeline.app:app worker --hostname="$WORKER_ID" --loglevel=info --concurrency="$CONCURRENCY"
+celery -A src.pipeline.app:app worker --hostname="$WORKER_ID" --loglevel=info --concurrency="$CONCURRENCY" -E
 
