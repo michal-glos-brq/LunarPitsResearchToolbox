@@ -55,7 +55,7 @@ This module is designed to be compatible with `spiceypy` and uses
 NAIF-standard kernels fetched from public and local repositories.
 
 """
-
+import os
 from abc import ABC
 from typing import List, Literal
 from collections import OrderedDict
@@ -220,8 +220,12 @@ class LROKernelManagerMixin:
             pre_download_kernels (bool, optional): Pre-download kernels, otherwise download just before loading. Defaults
             diviner_ck (bool, optional): Use DIVINER CK kernels. Defaults to False.
             lroc_ck (bool, optional): Use LROC CK kernels. Defaults to False.
-            keep_dynamic_kernels (bool, optional): Do not delete dynamic kernels once unloaded. Defaults to True.
+            keep_dynamic_kernels (bool, optional): Do not delete dynamic kernels once unloaded. Defaults to True. Can be overriden
+                by ENV var PURGE_DYNAMIC_KERNELS set to 1
         """
+        if keep_dynamic_kernels and os.getenv("PURGE_DYNAMIC_KERNELS"):
+            keep_dynamic_kernels = False
+
         # Spacecraft clock
         self.static_kernels["sclk"].append(AutoUpdateKernel(lro_url("sclk/"), lro_path("sclk"), r"lro_clkcor.*.tsc"))
         self.static_kernels["fk"] += [
@@ -311,6 +315,8 @@ class GRAILKernelManagerMixin:
         min_required_time: Time = None,
         max_required_time: Time = None,
     ):
+        if keep_dynamic_kernels and os.getenv("PURGE_DYNAMIC_KERNELS"):
+            keep_dynamic_kernels = False
         # Spacecraft clock
         self.static_kernels["sclk"].append(
             AutoUpdateKernel(grail_url("sclk/"), grail_path("sclk"), r"grb_sclkscet.*.tsc")

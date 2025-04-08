@@ -49,4 +49,19 @@ sudo systemctl enable zerotier-one
 sudo systemctl start zerotier-one
 
 sudo zerotier-cli join 60ee7c034a42cc48
+
+This is probably masterIP: 192.168.191.171
+```
+
+
+tmux
+```
+tmux new -s worker
+
+make worker-start
+
+# Ctrl + B  (release)
+# then D
+
+tmux attach -t worker
 ```
