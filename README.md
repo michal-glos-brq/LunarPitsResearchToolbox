@@ -25,4 +25,28 @@ sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin 
 ```
 
 Clone git repo
-`git clone https://github.com/michal-glos-brq/LunarPitsResearchToolbox.git`
+```
+git clone https://github.com/michal-glos-brq/LunarPitsResearchToolbox.git
+```
+
+
+Daemon
+```
+sudo usermod -aG docker $USER
+
+sudo systemctl start docker
+sudo systemctl enable docker
+```
+
+
+
+Zero-Tier
+```
+curl -s https://install.zerotier.com | sudo bash
+
+
+sudo systemctl enable zerotier-one
+sudo systemctl start zerotier-one
+
+sudo zerotier-cli join 60ee7c034a42cc48
+```

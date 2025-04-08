@@ -8,8 +8,8 @@ from src.global_config import HDD_BASE_PATH
 MASTER_IP = os.getenv("MASTER_IP", "host.docker.internal")
 MONGO_URI = f"mongodb://admin:password@{MASTER_IP}:27017"
 
-# 480-ish minutes of retrying, in case server is not reachable
-MAX_MONGO_RETRIES = 240
+# A lot of minutes, will wait to reconnect just in case
+MAX_MONGO_RETRIES = 4096
 
 
 PIT_ATLAS_DB_NAME = "lro_pits"
