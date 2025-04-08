@@ -16,6 +16,7 @@ worker-build-no-cache:
 
 worker-start:
 	@mkdir -p ${UTILITY_VOLUME}
+	@mkdir -p ${UTILITY_VOLUME}/logs
 	@chmod -R 777 ${UTILITY_VOLUME}
 	@docker run -it --rm \
 		--env-file .env \

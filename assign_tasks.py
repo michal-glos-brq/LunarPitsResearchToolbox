@@ -62,7 +62,7 @@ def main():
         task_config = TaskConfig(task_type=args.task, config_name=args.config_name)
         runner = task_config.task_runner_class()
         logging.info(f"Running task: {args.task} with config '{args.config_name}'")
-        runner.run(args.config_name, dry_run=args.dry_run)
+        runner.run(args.config_name, dry_run=args.dry_run, simulation_name=args.name)
 
     except Exception as e:
         logging.info(f"Error while running task: {e}")

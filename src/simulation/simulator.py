@@ -193,6 +193,22 @@ class RemoteSensingSimulator:
         total = int(td.total_seconds())
         return f"{total // 3600:02}:{(total % 3600) // 60:02}:{total % 60:02}"
 
+    @property
+    def simulation_quality_metadata(self):
+        return {
+            "total_simulated_seconds": int(self.simulation_state.simulation_timekeeper.total_seconds()),
+            "total_simulated_steps": self.simulation_state.current_simulation_step,
+            "instruments_summary": {
+                instrument: {
+                    "total_success": state.total_success,
+                    "total_failed": state.total_failed,
+                }
+                for instrument, state in self.instrument_simulation_states.items()
+            },
+            "spacecraft_position_computation_failed_total": self.simulation_state.spacecraft_position_computation_failed_counter,
+        }
+
+
     def check_threads(self):
         # Iterate in reverse to safely pop finished threads.
         for thread_id in range(len(self.threads) - 1, -1, -1):
@@ -370,6 +386,7 @@ class RemoteSensingSimulator:
             update_thread = Sessions.start_background_update_simulation_metadata(
                 self.simulation_metadata_id,
                 self.simulation_state.current_simulation_timestamp.utc.iso,
+                metadata=self.simulation_quality_metadata,
             )
             self.threads.append(update_thread)
             self.simulation_state.real_time = time.time()
@@ -511,6 +528,7 @@ class RemoteSensingSimulator:
             self.simulation_metadata_id,
             self.simulation_state.current_simulation_timestamp.utc.iso,
             finished=True,
+            metadata=self.simulation_quality_metadata,
         )
         self.threads.append(update_thread)
 

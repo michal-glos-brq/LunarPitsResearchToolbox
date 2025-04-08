@@ -24,11 +24,6 @@ RUN apt-get update && apt-get install -y \
     dpkg-reconfigure --frontend noninteractive tzdata && \
     rm -rf /var/lib/apt/lists/*
 
-# # Install ZeroTier
-# RUN curl -s https://install.zerotier.com | bash && \
-#     mkdir -p /var/lib/zerotier-one && \
-#     chmod 755 /var/lib/zerotier-one
-
 # Add deadsnakes PPA (now that software-properties-common is installed)
 RUN add-apt-repository ppa:deadsnakes/ppa -y && apt-get update
 
@@ -49,16 +44,11 @@ COPY src /app/src
 
 
 # Create and activate virtual environment, then install dependencies
+# This is probably stupid and now that I have moved networking from Docker, using
+# simpler base image, not requiring python venv (apt python locking of ubutnu)
 RUN python3.9 -m venv /app/venv && \
     /app/venv/bin/pip3 install --upgrade pip poetry && \
     . /app/venv/bin/activate && poetry install --no-root
-
-
-# # Set up cron job for code updates
-# RUN chmod +x /app/worker_entrypoint.sh /app/update_code.sh /app/run_celery.sh && \
-#     echo "*/5 * * * * root /app/update_code.sh >> /var/log/update_code.log 2>&1" > /etc/cron.d/celery_update && \
-#     chmod 0644 /etc/cron.d/celery_update && \
-#     crontab /etc/cron.d/celery_update
 
 # Start bash
 ENTRYPOINT ["/bin/bash", "/app/worker_entrypoint.sh"]

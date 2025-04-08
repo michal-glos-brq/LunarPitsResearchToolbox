@@ -246,12 +246,28 @@ class Sessions:
         session[SIMULATION_METADATA_COLLECTION].insert_one(metadata)
 
     @staticmethod
-    def update_simulation_metadata(metadata_id, current_time_iso, finished=None):
+    def update_simulation_metadata(metadata_id, current_time_iso, finished=None, metadata=None):
         update_fields = {"last_logged_time": current_time_iso}
         if finished is not None:
             update_fields["finished"] = finished
+        if metadata is not None:
+            update_fields["metadata"] = metadata
         session = Sessions.get_db_session(SIMULATION_DB_NAME)
         session[SIMULATION_METADATA_COLLECTION].update_one({"_id": metadata_id}, {"$set": update_fields})
+
+
+    @staticmethod
+    def start_background_update_simulation_metadata(metadata_id, current_time_iso, finished=None, metadata=None):
+        """
+        Spawns a background thread to update the simulation metadata document.
+        """
+        thread = threading.Thread(
+            target=Sessions.update_simulation_metadata, args=(metadata_id, current_time_iso, finished, metadata)
+        )
+        thread.daemon = True
+        thread.start()
+        return thread
+
 
     @staticmethod
     def get_spacecraft_position_failed_collection(spacecraft_name: str):
@@ -261,18 +277,6 @@ class Sessions:
         session = Sessions.get_db_session(SIMULATION_DB_NAME)
         failed_collection_name = f"{spacecraft_name.replace(' ', '_')}_satellite_position_failed"
         return session[failed_collection_name]
-
-    @staticmethod
-    def start_background_update_simulation_metadata(metadata_id, current_time_iso, finished=None):
-        """
-        Spawns a background thread to update the simulation metadata document.
-        """
-        thread = threading.Thread(
-            target=Sessions.update_simulation_metadata, args=(metadata_id, current_time_iso, finished)
-        )
-        thread.daemon = True
-        thread.start()
-        return thread
 
     @staticmethod
     def process_failed_inserts():
