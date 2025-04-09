@@ -65,3 +65,9 @@ make worker-start
 
 tmux attach -t worker
 ```
+
+Example of task assignment:
+```
+./assign_tasks.py --task remote_sensing --config-name lunar_pit_atlas_mapping_LRO_simulation --name full_run
+```
+

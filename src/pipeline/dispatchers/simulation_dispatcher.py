@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 from astropy.time import TimeDelta
 
@@ -13,7 +14,7 @@ class RemoteSensingTaskRunner(BaseTaskRunner):
     Splits the experiment time range into chunks and dispatches Celery tasks.
     """
 
-    def run(self, config_name: str, dry_run: bool = True, simulation_name: str = None):
+    def run(self, config_name: str, dry_run: bool = True, simulation_name: str = None, retry_count: Optional[int] = None):
         if config_name not in BaseSimulationConfig.registry:
             available = list(BaseSimulationConfig.registry.keys())
             raise ValueError(f"Unknown experiment config '{config_name}'. Available configs: {available}")
@@ -36,6 +37,7 @@ class RemoteSensingTaskRunner(BaseTaskRunner):
             task_kwargs["start_time_et"] = current_time.cxcsec
             task_kwargs["end_time_et"] = next_time.cxcsec
             task_kwargs["simulation_name"] = simulation_name
+            task_kwargs["retry_count"] = retry_count
 
             if not dry_run:
                 result = run_remote_sensing_simulation_task.delay(**task_kwargs)

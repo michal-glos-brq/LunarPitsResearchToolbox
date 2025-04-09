@@ -56,13 +56,14 @@ def main():
     parser.add_argument("--config-name", help="Name of the experiment config to use.")
     parser.add_argument("--dry-run", action="store_true", help="Run in dry run mode (no actual tasks will be submitted).")
     parser.add_argument("--name", help="Name of the experiment config to use.")
+    parser.add_argument("--retry-count", type=int, default=None, help="Indication whether the run is a retry run.")
     args = parser.parse_args()
 
     try:
         task_config = TaskConfig(task_type=args.task, config_name=args.config_name)
         runner = task_config.task_runner_class()
         logging.info(f"Running task: {args.task} with config '{args.config_name}'")
-        runner.run(args.config_name, dry_run=args.dry_run, simulation_name=args.name)
+        runner.run(args.config_name, dry_run=args.dry_run, simulation_name=args.name, retry_count=args.retry_count)
 
     except Exception as e:
         logging.info(f"Error while running task: {e}")

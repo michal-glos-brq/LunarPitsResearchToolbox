@@ -48,6 +48,7 @@ def run_remote_sensing_simulation(
     kernel_manager_kwargs: dict,
     filter_kwargs: dict,
     simulation_name: Optional[str] = None,
+    retry_count: Optional[int] = None,
     **kwargs,
 ) -> dict:
     """
@@ -118,6 +119,7 @@ def run_remote_sensing_simulation(
             supress_error_logs=True,
             simulation_name=simulation_name,
             task_group_id=str(uuid.uuid4()),
+            retry_count=retry_count
         )
     except Exception as e:
         logger.error(f"Simulation failed: {e}", exc_info=True)

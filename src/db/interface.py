@@ -238,12 +238,41 @@ class Sessions:
         )
 
     @staticmethod
-    def insert_simulation_metadata(metadata: dict):
+    def prepare_simulation_metadata(simulation_metadata: dict) -> bool:
         """
-        Returns the simulation metadata collection.
+        Checks if a finished simulation metadata record already exists that matches the following fields:
+          - simulation_name
+          - start_time
+          - end_time
+          - filter_name
+          - base_step
+          - instruments (matched as an unordered set, i.e. same elements and same count)
+        If such a document exists, returns True (simulation already computed).
+        Otherwise, inserts the provided metadata and returns False.
         """
         session = Sessions.get_db_session(SIMULATION_DB_NAME)
-        session[SIMULATION_METADATA_COLLECTION].insert_one(metadata)
+        collection = session[SIMULATION_METADATA_COLLECTION]
+        # Query matching:
+        # - "instruments": {"$all": [...], "$size": n} makes sure that the document's instruments array contains
+        #   all the provided elements (regardless of order) and that its length matches exactly.
+        query = {
+            "simulation_name": simulation_metadata["simulation_name"],
+            "start_time": simulation_metadata["start_time"],
+            "end_time": simulation_metadata["end_time"],
+            "filter_name": simulation_metadata["filter_name"],
+            "base_step": simulation_metadata["base_step"],
+            "finished": True,
+            "instruments": {
+                "$all": simulation_metadata["instruments"],
+                "$size": len(simulation_metadata["instruments"]),
+            },
+        }
+        existing = collection.find_one(query)
+        if existing:
+            return True
+        else:
+            collection.insert_one(simulation_metadata)
+            return False
 
     @staticmethod
     def update_simulation_metadata(metadata_id, current_time_iso, finished=None, metadata=None):

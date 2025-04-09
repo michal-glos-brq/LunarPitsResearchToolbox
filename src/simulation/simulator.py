@@ -422,10 +422,12 @@ class RemoteSensingSimulator:
             self.check_threads()
 
     def create_metadata_record(self):
+        '''Returns True when task already computed'''
         self.simulation_metadata_id = ObjectId()
         simulation_metadata = {
             "_id": self.simulation_metadata_id,  # Explicit ID
-            "simulation_name": self.simulation_name,
+            "simulation_name": self._simulation_name,
+            "simulation_attempt_name": self.simulation_name,
             "task_group_id": self.task_group_id,
             "start_time": self.start_time.utc.iso,
             "end_time": self.end_time.utc.iso,
@@ -444,7 +446,7 @@ class RemoteSensingSimulator:
             "finished": False,
             "base_step": SIMULATION_STEP,
         }
-        Sessions.insert_simulation_metadata(simulation_metadata)
+        return Sessions.prepare_simulation_metadata(simulation_metadata)
 
     def start_simulation(
         self,
@@ -455,12 +457,17 @@ class RemoteSensingSimulator:
         current_task: Optional[Task] = None,
         simulation_name: Optional[str] = None,
         task_group_id: Optional[str] = None,
+        retry_count: Optional[int] = None,
     ):
         """
         :param start_time: Start time of the simulation
         :param end_time: End time of the simulation
         :param interactive_progress: Whether to show the progress bar, if false, just dump progress and logs
         :param current_task: Celery task object, if provided, will be used to update the progress
+        :param supress_error_logs: Whether to suppress error logs
+        :param simulation_name: Name of the simulation
+        :param task_group_id: Task group ID for the simulation
+        :param retry_count: Is that a retry of a task which already ran? Which retry?
         """
         # Use kernel manager's loaded times if not provided.
         self.start_time = self.kernel_manager.min_loaded_time if start_time is None else start_time
@@ -468,7 +475,8 @@ class RemoteSensingSimulator:
         self.simulation_duration = timedelta(seconds=(self.end_time - self.start_time).sec)
         self.simulation_duration_formatted = RemoteSensingSimulator.format_td(self.simulation_duration)
         self.total_seconds = self.simulation_duration.total_seconds()
-        self.simulation_name = simulation_name
+        self._simulation_name = simulation_name
+        self.simulation_name = f"{simulation_name}_{retry_count}" if retry_count is not None else simulation_name
         self.task_group_id = task_group_id
 
         # Initialize simulation state.
@@ -490,7 +498,11 @@ class RemoteSensingSimulator:
         )
 
         # Log the simulation state into Mongo
-        self.create_metadata_record()
+        task_already_finished = self.create_metadata_record()
+        if task_already_finished:
+            if current_task is not None:
+                current_task.update_state(state="SUCCESS", meta={"result": "Task already finished, no computation to do."})
+            return
 
         SPICELog.interactive_progress = interactive_progress
         SPICELog.supress_output = supress_error_logs
