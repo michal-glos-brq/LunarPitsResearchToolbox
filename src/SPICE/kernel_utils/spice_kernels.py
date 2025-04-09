@@ -124,7 +124,14 @@ class BaseKernel:
         """Ensure the kernel is downloaded and load it into spiceypy."""
         if not self._loaded:
             self.ensure_downloaded()
-            spice.furnsh(self.filename)
+            try:
+                spice.furnsh(self.filename)
+            except:
+                spice.reset()
+                logger.error("Failed to load kernel %s, trying again", self.filename)
+                self.ensure_downloaded()
+                spice.furnsh(self.filename)
+
             self._loaded = True
             logger.debug("[SPICE-LOAD] Loading kernel: %s", self.filename)
         else:
@@ -145,12 +152,30 @@ class BaseKernel:
         if actual != expected:
             raise ValueError(f"Size mismatch: expected {expected} bytes, got {actual} bytes")
 
+
+    @staticmethod
+    def temp_filename(filename: str):
+        """Generate a temporary filename for downloading."""
+        return filename + ".tmp"
+
+
     def download_file(self, url: str, filename: str) -> None:
+        tmp_filename = self.temp_filename(filename)
         with FileLock(
-            filename + ".tmp.lock", timeout=SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL
+            tmp_filename + ".lock", timeout=SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL
         ):
-            if not os.path.exists(filename):
-                self._download_file(url, filename)
+            # Arbitrary retry count for faults on FS level
+            for _ in range(3):
+                if not os.path.exists(filename):
+                    self._download_file(url, filename)
+
+                if os.path.exists(filename):
+                    if os.path.getsize(filename) > 0:
+                        break
+                    else:
+                        logger.warning("File %s is empty, retrying download", filename)
+                        os.remove(filename)
+                        os.remove(tmp_filename)
 
     ### Nesting crime scene start
     def _download_file(self, url: str, filename: str) -> None:
@@ -159,7 +184,7 @@ class BaseKernel:
         Includes file size verification using expected Content-Length.
         """
         retries = 0
-        temp_path = filename + ".tmp"
+        temp_path = self.temp_filename(filename)
         headers = {"User-Agent": "Mozilla/5.0 (compatible; MyDownloader/1.0)"}
         corruption = False
 
@@ -197,9 +222,10 @@ class BaseKernel:
                         cl = r.headers.get("Content-Length")
                         total_size = int(cl) if cl and cl.isdigit() else None
 
+                    # Some remote kernels are 0 Bytes?!
                     if total_size is None or total_size <= 0:
                         if not corruption:
-                            corruptio = True
+                            corruption = True
                         else:
                             logger.warning(f"File {filename} looks corrupted on remote server {url}")
                             self.corrupted = True

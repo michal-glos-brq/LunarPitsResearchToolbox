@@ -29,6 +29,11 @@ class BaseFilter(ABC):
     def name(self) -> str:
         pass
 
+    @staticmethod
+    @abstractmethod
+    def _name(**kwargs) -> str:
+        pass
+
     @abstractmethod
     def rank_point(self, point: np.array) -> float:
         pass
@@ -69,6 +74,11 @@ class PointFilter(BaseFilter):
     @property
     def name(self) -> str:
         return f"PointFilter_{self.hard_radius}"
+
+    @staticmethod
+    def _name(**kwargs):
+        """Obtain the filter unique name without instantiation"""
+        return f"PointFilter_{kwargs['hard_radius']}"
 
     def rank_point(self, point: np.array) -> float:
         """Returns distance from our points of interest"""
@@ -153,6 +163,12 @@ class AreaFilter(BaseFilter):
                 )
             )
 
+
+    @staticmethod
+    def _name(**kwargs):
+        """Obtain the filter unique name without instantiation"""
+        return f"AreaFilter_{kwargs['min_lat']}_{kwargs['max_lat']}_{kwargs['min_lon']}_{kwargs['max_lon']}"
+
     @property
     def name(self) -> str:
         return f"AreaFilter_{self.min_lat}_{self.max_lat}_{self.min_lon}_{self.max_lon}"
@@ -191,3 +207,5 @@ class CompositeFilter(BaseFilter):
 
     def rank_point(self, point: np.array) -> float:
         return min([f.rank_point(point) for f in self.filters])
+
+

@@ -8,7 +8,7 @@ from src.SPICE.kernel_utils.kernel_management import LROKernelManager, GRAILKern
 from src.SPICE.instruments import lro as lro_instruments
 from src.SPICE.instruments import grail as grail_instruments
 from src.simulation.simulator import RemoteSensingSimulator
-from src.simulation.filters import PointFilter, AreaFilter
+from src.simulation import FILTER_MAP
 
 
 logger = logging.getLogger(__name__)
@@ -31,10 +31,7 @@ INSTRUMENT_MAP = {
     "grai_b": grail_instruments.GrailBInstrument,
 }
 
-FILTER_MAP = {
-    "point": PointFilter,
-    "area": AreaFilter,
-}
+
 
 
 # @app.task(bind=True)

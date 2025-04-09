@@ -19,6 +19,15 @@ class BaseSimulationConfig:
         super().__init_subclass__(**kwargs)
         cls.registry[cls.experiment_name] = cls
 
+    @staticmethod
+    def get_config_dict(config_name: str):
+        if config_name not in BaseSimulationConfig.registry:
+            available = list(BaseSimulationConfig.registry.keys())
+            raise ValueError(f"Unknown experiment config '{config_name}'. Available configs: {available}")
+
+        config_class = BaseSimulationConfig.registry[config_name]
+        return config_class.to_dict()
+
     @classmethod
     def to_dict(cls):
         return {

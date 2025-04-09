@@ -1,11 +1,13 @@
 """
 Here we are defining the celery app, completely
 """
+from requests.exceptions import ConnectionError
 
 from celery import Celery
 
 from src.pipeline.config import REDIS_CONNECTION_STRING
 from src.pipeline.tasks.simulator import run_remote_sensing_simulation
+
 
 app = Celery("worker", broker=REDIS_CONNECTION_STRING, backend=REDIS_CONNECTION_STRING)
 
@@ -25,5 +27,9 @@ app.conf.update(
 )
 
 run_remote_sensing_simulation_task = app.task(
-    name="src.pipeline.tasks.simulator.run_remote_sensing_simulation", bind=True
+    name="src.pipeline.tasks.simulator.run_remote_sensing_simulation",
+    bind=True,
+    autoretry_for=(ConnectionError,),
+    retry_backoff=True,
+    retry_kwargs={'max_retries': 5}
 )(run_remote_sensing_simulation)

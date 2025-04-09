@@ -15,12 +15,8 @@ class RemoteSensingTaskRunner(BaseTaskRunner):
     """
 
     def run(self, config_name: str, dry_run: bool = True, simulation_name: str = None, retry_count: Optional[int] = None):
-        if config_name not in BaseSimulationConfig.registry:
-            available = list(BaseSimulationConfig.registry.keys())
-            raise ValueError(f"Unknown experiment config '{config_name}'. Available configs: {available}")
 
-        config_class = BaseSimulationConfig.registry[config_name]
-        config = config_class.to_dict()
+        config = BaseSimulationConfig.get_config_dict(config_name)
 
         start_time = config["start_time"]
         end_time = config["end_time"]
