@@ -32,7 +32,9 @@ class RemoteSensingTaskRunner(BaseTaskRunner):
             task_kwargs = dict(config["simulation_kwargs"])
             task_kwargs["start_time_et"] = current_time.cxcsec
             task_kwargs["end_time_et"] = next_time.cxcsec
-            task_kwargs["simulation_name"] = simulation_name
+            # It's possible to overrid the name assigned in simulation configuration via CLI parameters
+            if simulation_name is not None:
+                task_kwargs["simulation_name"] = simulation_name
             task_kwargs["retry_count"] = retry_count
 
             if not dry_run:

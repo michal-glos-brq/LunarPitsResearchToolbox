@@ -10,7 +10,8 @@ import logging
 import queue
 import random
 import threading
-from typing import List
+from typing import List, Dict, Tuple
+from datetime import datetime
 
 import pandas as pd
 from pymongo import MongoClient, errors
@@ -24,6 +25,7 @@ from src.db.config import (
     SIMULATION_DB_NAME,
     SIMULATION_METADATA_COLLECTION,
     MAX_MONGO_RETRIES,
+    SIMULATION_TIME_INTERVAL_COLLECTION_NAME,
 )
 
 
@@ -82,7 +84,8 @@ class Sessions:
                     Sessions.client = MongoClient(
                         MONGO_URI,
                         serverSelectionTimeoutMS=5000,
-                        socketTimeoutMS=10000,
+                        # Sometimes, we read a lot ... 30 minutes seem reasonable
+                        socketTimeoutMS=30 * 60 * 1000,
                         connectTimeoutMS=5000,
                         retryWrites=True,
                         retryReads=True,
@@ -242,6 +245,48 @@ class Sessions:
         return positive_collection, failed_collection
 
     @staticmethod
+    def prepare_simulation_intervals_collection():
+        """
+        Prepares the simulation intervals collection as a timeseries collection.
+        Returns the prepared collection object.
+        """
+        session = Sessions.get_db_session(SIMULATION_DB_NAME)
+
+        # Collection creation (idempotent)
+        for attempt in range(3):
+            try:
+                session.create_collection(
+                    SIMULATION_TIME_INTERVAL_COLLECTION_NAME,
+                    timeseries={
+                        "timeField": "created_at",
+                        "metaField": None,
+                        "granularity": "seconds",
+                    },
+                )
+                break  # Success
+            except errors.CollectionInvalid:
+                break  # Already exists, OK
+            except errors.OperationFailure as e:
+                if e.code == 48:  # NamespaceExists
+                    break
+                elif attempt < 2:
+                    time.sleep(0.1 + random.random() * 0.2)
+                    continue
+                else:
+                    raise
+
+        collection = session[SIMULATION_TIME_INTERVAL_COLLECTION_NAME]
+
+        # Index creation (idempotent)
+        collection.create_index("simulation_name")
+        collection.create_index("instrument_name")
+        collection.create_index("start_et")
+        collection.create_index("end_et")
+
+        return collection
+
+
+    @staticmethod
     def prepare_simulation_metadata(simulation_metadata: dict) -> bool:
         """
         Checks if a finished simulation metadata record already exists that matches the following fields:
@@ -300,7 +345,6 @@ class Sessions:
         session = Sessions.get_db_session(SIMULATION_DB_NAME)
         session[SIMULATION_METADATA_COLLECTION].update_one({"_id": metadata_id}, {"$set": update_fields})
 
-
     @staticmethod
     def simulation_tasks_query(filter_name: str, simulation_name: str, instrument_names: List[str]) -> List[dict]:
         """
@@ -319,7 +363,7 @@ class Sessions:
         session = Sessions.get_db_session(SIMULATION_DB_NAME)
         # Get the simulation metadata collection.
         collection = session[SIMULATION_METADATA_COLLECTION]
-        
+
         # Build the query.
         query = {
             "simulation_name": simulation_name,
@@ -338,6 +382,31 @@ class Sessions:
         simulation_task_documents = list(cursor)
         return simulation_task_documents
 
+    @staticmethod
+    def insert_simulation_intervals(simulation_name: str, intervals_dict: Dict[str, List[Tuple[float, float]]]):
+        """
+        Inserts simulation time intervals into MongoDB timeseries collection.
+        Each interval is stored as a separate document.
+        """
+        collection = Sessions.prepare_simulation_intervals_collection()
+        now = datetime.utcnow()
+
+        documents = []
+        for instrument_name, intervals in intervals_dict.items():
+            for start_et, end_et in intervals:
+                documents.append({
+                    "simulation_name": simulation_name,
+                    "instrument_name": instrument_name,
+                    "created_at": now,
+                    "start_et": start_et,
+                    "end_et": end_et,
+                })
+
+        if documents:
+            collection.insert_many(documents, ordered=False)
+            logging.info(f"Inserted {len(documents)} interval documents into '{collection.name}'.")
+        else:
+            logging.warning("No intervals to insert.")
 
     ##########################################################################################
     #####                               Background Tasks                                 #####

@@ -18,6 +18,8 @@ PIT_COLLECTION_NAME = "pits"
 PIT_DETAIL_COLLECTION_NAME = "pit_details"
 PIT_ATLAS_IMAGE_COLLECTION_NAME = "images"
 
+SIMULATION_TIME_INTERVAL_COLLECTION_NAME = "simulation_time_intervals"
+
 ### Configuration for local-ran scripts (Pit Atlas scraping and parsing)
 IMG_BASE_FOLDER = os.path.join(HDD_BASE_PATH, "MONGO", "PITS_IMAGES")
 

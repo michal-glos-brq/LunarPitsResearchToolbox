@@ -375,7 +375,7 @@ class RemoteSensingSimulator:
                 current_task.update_state(
                     state="PROGRESS",
                     meta={
-                        "timestamp": datetime.datetime.now().isoformat(),
+                        "timestamp": datetime.datetime.now(),
                         "state": state,
                         "progress [%]": 100
                         * self.simulation_state.simulation_timekeeper.total_seconds()
@@ -442,7 +442,7 @@ class RemoteSensingSimulator:
             "satellite_name": self.instruments[0].satellite_name,
             "filter_name": self.filter.name,
             "frame": self.kernel_manager.main_reference_frame,
-            "created_at": datetime.datetime.now().isoformat(),
+            "created_at": datetime.datetime.now(),
             "finished": False,
             "base_step": SIMULATION_STEP,
         }

@@ -22,13 +22,13 @@ KERNEL_MANAGER_MAP = {
 # We can lay them out like this, because sanity checks are done further down the line
 # Simulation e.b. works with only one satellite (is checked)
 INSTRUMENT_MAP = {
-    "diviner": lro_instruments.DivinerInstrument,
-    "lola": lro_instruments.LolaInstrument,
-    "mini_rf": lro_instruments.MiniRFInstrument,
-    "lroc_wac": lro_instruments.LROCWACInstrument,
-    "lroc_nac": lro_instruments.LROCNACInstrument,
-    "grai_a": grail_instruments.GrailAInstrument,
-    "grai_b": grail_instruments.GrailBInstrument,
+    lro_instruments.DivinerInstrument.name: lro_instruments.DivinerInstrument,
+    lro_instruments.LolaInstrument.name: lro_instruments.LolaInstrument,
+    lro_instruments.MiniRFInstrument.name: lro_instruments.MiniRFInstrument,
+    lro_instruments.LROCWACInstrument.name: lro_instruments.LROCWACInstrument,
+    lro_instruments.LROCNACInstrument.name: lro_instruments.LROCNACInstrument,
+    grail_instruments.GrailAInstrument.name: grail_instruments.GrailAInstrument,
+    grail_instruments.GrailBInstrument.name: grail_instruments.GrailBInstrument,
 }
 
 

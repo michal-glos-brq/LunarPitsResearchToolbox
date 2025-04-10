@@ -52,11 +52,11 @@ class LunarPitAtlasMappingLROConfig(BaseSimulationConfig):
     experiment_name = "lunar_pit_atlas_mapping_LRO_simulation"
 
     instrument_names = [
-        "diviner",
-        "lola",
-        "mini_rf",
-        "lroc_wac",
-        "lroc_nac",
+        "DIVINER",
+        "LOLA",
+        "MiniRF",
+        "LROC_WAC",
+        "LROC_NAC",
     ]
 
     kernel_manager_type = "LRO"
