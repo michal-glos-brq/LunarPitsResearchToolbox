@@ -223,6 +223,7 @@ class RemoteSensingSimulator:
         Flush SPICE errors and reset the error state.
         """
         try:
+            spice.reset()
             spice.utc2et(self.simulation_state.current_simulation_timestamp.utc.iso)
         except Exception as e:
             ...

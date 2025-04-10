@@ -1,100 +1,88 @@
 import logging
 from typing import Dict, List
+from datetime import datetime
 
+from bson import ObjectId
 from astropy.time import Time, TimeDelta
 import spiceypy as spice
 
 
+from src.db.interface import Sessions
+
+
 logger = logging.getLogger(__name__)
 
-class SimulationEngine:
+class DataFetchingEngine:
     """
-    Orchestrates the simulation using KernelManager, DataProductManagers, and IntervalManager.
-    Iterates through time, fetches data for each instrument, reprojects,
-    and processes points (e.g., using SPICE sincpt or custom logic).
+    Orchestrate the data fetcher to downnload, parse and reproject data to our desired frame.
     """
-    def __init__(
-        self,
-        global_start: Time,
-        global_end: Time,
-        step: TimeDelta,
-        kernel_manager: BaseKernelManager,
-        data_managers: Dict[str, BaseDataProductManager],  # key: instrument name
-    ):
-        self.global_start = global_start
-        self.global_end = global_end
-        self.step = step
-        self.interval_manager = IntervalManager(global_start, global_end, step)
+
+    class InstrumetDataExtraction:
+        ...
+
+    class ExtractionState:
+        ...
+
+
+    def __init__(self, instruments: List[BaseInstrument], filter_object: BaseFilter, kernel_manager: BaseKernelManager):
+        self.instruments = instruments
+        self.filter = filter_object
         self.kernel_manager = kernel_manager
-        self.data_managers = data_managers
-        # This will hold final processed simulation results
-        self.results: List[SimulationResult] = []
+        self.threads = []
 
-    def initialize(self):
-        # Load kernels for global interval.
-        self.kernel_manager.load_static_kernels()
-        self.kernel_manager.load_dynamic_kernels(self.global_start, self.global_end)
-        # Load data for each instrument.
-        for dm in self.data_managers.values():
-            dm.load_data(self.global_start, self.global_end)
-        # Setup simulation time in the interval manager.
-        self.current_time = self.global_start
 
-    def process_data_point(self, data_point: Dict, et: float, instrument: str):
-        """
-        Process a single data point for a given instrument.
-        You can add reprojection here using SPICE (e.g. sincpt),
-        additional spatial filtering, etc.
-        """
-        # Example: get spacecraft state at time 'et'
-        sc_state = self.kernel_manager.get_spacecraft_state(et)
-        # Example: Use a projection helper:
-        projected = self.project_data_point(data_point, sc_state)
-        # Apply filters, validations, etc.
-        if self.validate_projected(projected):
-            self.results.append(SimulationResult(instrument, et, projected))
-        else:
-            logger.debug(f"[{instrument}] Data point at ET {et} filtered out.")
+    def check_threads(self):
+        # Iterate in reverse to safely pop finished threads.
+        for thread_id in range(len(self.threads) - 1, -1, -1):
+            if self.threads[thread_id] is None:
+                self.threads.pop(thread_id)
 
-    def project_data_point(self, data_point: Dict, spacecraft_state: Dict) -> Dict:
-        """
-        Reproject raw data point using SPICE.
-        This could call spice.sincpt() or a custom reprojection method.
-        Return the projected point as a dictionary.
-        """
-        # Placeholder for your actual projection logic.
-        # For example, use the data point's range and the instrument's boresight vector.
-        projected = data_point.copy()  # Dummy: simply pass it through.
-        # Real code will compute intersect, incidence angles, etc.
-        return projected
+            elif not self.threads[thread_id].is_alive():
+                self.threads[thread_id].join()
 
-    def validate_projected(self, projected: Dict) -> bool:
-        """
-        Return True if the projected point meets your spatial criteria,
-        e.g., if it lies within a 5 km circle of a target.
-        """
-        # Implement your spatial criteria.
-        return True  # Placeholder
 
-    def run(self):
-        self.initialize()
-        et_step = self.step.sec
-        # Main simulation loop
-        while self.current_time < self.global_end:
-            current_et = spice.str2et(self.current_time.utc.iso)
-            # Step kernel manager to update SPICE state
-            self.kernel_manager.step(self.current_time)
-            # For each instrument, fetch and process data points in this time interval.
-            for instrument, dm in self.data_managers.items():
-                data_points = dm.get_data_in_interval(current_et, current_et + et_step)
-                for dp in data_points:
-                    self.process_data_point(dp, current_et, instrument)
-            # Advance simulation time
-            self.current_time += self.step
-        self.cleanup()
+    def flush_SPICE(self):
+        """
+        Flush SPICE errors and reset the error state.
+        """
+        try:
+            spice.reset()
+            # TODO - Use some other random command which would be OK
+            spice.utc2et(self.simulation_state.current_simulation_timestamp.utc.iso)
+        except Exception as e:
+            ...
 
-    def cleanup(self):
-        # Cleanup all resources
-        for dm in self.data_managers.values():
-            dm.cleanup()
-        self.kernel_manager.unload_all()
+
+    def create_metadata_record(self):
+        '''Returns True when task already computed'''
+        self.simulation_metadata_id = ObjectId()
+        simulation_metadata = {
+            "_id": self.simulation_metadata_id,  # Explicit ID
+            "simulation_name": self._simulation_name,
+            "simulation_attempt_name": self.simulation_name,
+            "task_group_id": self.task_group_id,
+            "start_time": self.start_time.utc.iso,
+            "end_time": self.end_time.utc.iso,
+            "last_logged_time": self.simulation_state.current_simulation_timestamp.utc.iso,
+            "kernel_manager_min_time": (
+                self.kernel_manager.min_loaded_time.utc.iso if self.kernel_manager.min_loaded_time else None
+            ),
+            "kernel_manager_max_time": (
+                self.kernel_manager.max_loaded_time.utc.iso if self.kernel_manager.max_loaded_time else None
+            ),
+            "instruments": [instrument.name for instrument in self.instruments],
+            "satellite_name": self.instruments[0].satellite_name,
+            "filter_name": self.filter.name,
+            "frame": self.kernel_manager.main_reference_frame,
+            "created_at": datetime.datetime.now(),
+            "finished": False,
+        }
+        return Sessions.prepare_simulation_metadata(simulation_metadata)
+
+
+    def start_extraction(self):
+        """
+        Start the data extraction process.
+        """
+        ...
+

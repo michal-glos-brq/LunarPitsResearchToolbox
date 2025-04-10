@@ -1,26 +1,5 @@
 
  - Debug
- - Add GRAIL Instrument
- - Add LRO Instruments
  - Add LRO Data fetchers
- - Add GRAIL Data fetchers
 
  - !Time interval better filter with subinstruemnts? Maybe not necessary!
-
- - Create Celery Workers from tasks
-
- - Celery will have "progress bar"
-
- - Make sure LBLDynamicKernelLoader uses v02 - not v01 where possible
- - Implement more sensible dynamic kernel management when kernels are not persistant (maybe just download in batches)
- - Rerun DSK kernel model, scale down radius by 1000, elevation is OK (already implemented, just run)
- - Add identification that GRAIL data were obtained/processed with nav/science data
- - TQDM refresh rate
- - Kernel manager debug
-
-
-
-
-
- Optimization
-  - Transformation matrices stored and cached within instrument class
