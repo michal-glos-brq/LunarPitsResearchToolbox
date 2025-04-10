@@ -13,8 +13,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from src.global_config import HDD_BASE_PATH, TQDM_NCOLS, MAX_DATA_DOWNLOADS, MAX_PROCESSES
-from src.config import TIME_STEP
-from src.db.mongo.interface import Sessions
+from src.db.interface import Sessions
 
 
 BASE_MARGIN = 3  # Km - For lunar model misalignment
@@ -26,7 +25,10 @@ class DataFile:
     timewindows: List[Tuple[datetime, datetime]]
 
 
-class BaseFetcher:
+class BaseFetcherRDR:
+    """
+    Base fetcher for RDR timeseries data, such as LOLA RDR and DIVINER RDR
+    """
 
     def __init__(self, threshold: float, simulation_collection_name: str):
         """THreshold - how much distance from our areas of interest are we requirering data from"""
@@ -60,11 +62,6 @@ class BaseFetcher:
     def file_download_timeout(self) -> int:
         """Can be overwritten if needed"""
         return 150
-
-    @property
-    def simulation_point_timedelta_upper_bound(self) -> timedelta:
-        """Maximal time distance difference between 2 simulation steps to be considered as continuous capture"""
-        return timedelta(s=(TIME_STEP * 2))  # Seems like reasonable default value
 
     @staticmethod
     def get_rough_treshold_margin(self):

@@ -393,6 +393,16 @@ class Sessions:
 
         documents = []
         for instrument_name, intervals in intervals_dict.items():
+            # Delete existing entries for this simulation + instrument
+            delete_result = collection.delete_many({
+                "simulation_name": simulation_name,
+                "instrument_name": instrument_name,
+            })
+            logging.info(
+                f"Deleted {delete_result.deleted_count} existing interval documents "
+                f"for simulation '{simulation_name}' and instrument '{instrument_name}'."
+            )
+
             for start_et, end_et in intervals:
                 documents.append({
                     "simulation_name": simulation_name,

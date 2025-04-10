@@ -55,6 +55,7 @@ This module is designed to be compatible with `spiceypy` and uses
 NAIF-standard kernels fetched from public and local repositories.
 
 """
+
 import os
 from abc import ABC
 from typing import List, Literal
@@ -154,6 +155,7 @@ class BaseKernelManager(ABC):
         min_time = self.min_loaded_time if activation_time is None else activation_time
         self.step(min_time)
 
+
 class LunarKernelManagerMixin:
     # spice.furnsh(LUNAR_MODEL["dsk_path"])
     def setup_lunar_kernels(self, frame: Literal["MOON_ME", "MOON_PA_DE440"] = LUNAR_FRAME, detailed: bool = False):
@@ -207,6 +209,7 @@ class LROKernelManagerMixin:
         pre_download_kernels: bool = True,
         diviner_ck: bool = False,
         lroc_ck: bool = False,
+        lola_ck: bool = False,
         keep_dynamic_kernels: bool = SPICE_PERSIST,
         min_required_time: Time = None,
         max_required_time: Time = None,
@@ -220,6 +223,7 @@ class LROKernelManagerMixin:
             pre_download_kernels (bool, optional): Pre-download kernels, otherwise download just before loading. Defaults
             diviner_ck (bool, optional): Use DIVINER CK kernels. Defaults to False.
             lroc_ck (bool, optional): Use LROC CK kernels. Defaults to False.
+            lola_ck (bool, optional): Use LOLA CK kernels. Defaults to False.
             keep_dynamic_kernels (bool, optional): Do not delete dynamic kernels once unloaded. Defaults to True. Can be overriden
                 by ENV var PURGE_DYNAMIC_KERNELS set to 1
         """
@@ -245,7 +249,10 @@ class LROKernelManagerMixin:
             BaseKernel(lro_url("ik/lro_dlre_v05.ti"), lro_path("ik/lro_dlre_v05.ti")),
             BaseKernel(lro_url("ik/lro_lamp_v03.ti"), lro_path("ik/lro_lamp_v03.ti")),
             BaseKernel(lro_url("ik/lro_lend_v00.ti"), lro_path("ik/lro_lend_v00.ti")),
-            BaseKernel(lro_url("ik/lro_lola_v00.ti"), lro_path("ik/lro_lola_v00.ti")),
+            BaseKernel(
+                "https://pds-geosciences.wustl.edu/lro/lro-l-lola-3-rdr-v1/lrolol_1xxx/geometry/lro_lola_v01.ti",
+                lro_path("ik/lro_lola_v00.ti"),
+            ),
             BaseKernel(
                 "https://naif.jpl.nasa.gov/pub/naif/LRO/kernels/ik/lro_lroc_v19.ti", lro_path("ik/lro_lroc_v19.ti")
             ),

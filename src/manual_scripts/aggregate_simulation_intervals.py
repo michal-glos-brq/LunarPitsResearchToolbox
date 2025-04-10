@@ -1,7 +1,10 @@
+#! /usr/bin/env python3
 """
 This is pretty simple script, which only aggregates simulation data into intervals (not sampled, but defined by)
+
+Strenght of this architecture is its idempotency (this is prioritized all over the codebase). No matter whether the simulation was ran 100 times, the results 
+will be the same. Effectively, running more simulations might lead to the same effects as oversampling, which would effectively be irrelevant.
 """
-#! /usr/bin/env python3
 
 import logging
 import argparse
@@ -16,31 +19,6 @@ from src.simulation import FILTER_MAP
 from src.global_config import TQDM_NCOLS
 
 logger = logging.getLogger(__name__)
-
-
-# Argparse
-config_name = ...
-name = ...
-# New query of distance by treshold
-new_threshold = ...
-config = BaseSimulationConfig.get_config_dict(config_name)
-
-
-# Values are tuples - the first collection is sucesfull collection, the second one is failed computation collection
-instrument_collections = {
-    instrument: Sessions.prepare_simulation_collections(instrument)
-    for instrument in config["simulation_kwargs"]["instrument_names"]
-}
-filter_name = FILTER_MAP[config["simulation_kwargs"]["filter_type"]]._name(
-    **config["simulation_kwargs"]["filter_kwargs"]
-)
-
-# Has to be ordered
-simulation_task_documents = Sessions.simulation_tasks_query(
-    filter_name=filter_name,
-    simulation_name=name,
-    instrument_names=config["simulation_kwargs"]["instrument_names"],
-)
 
 
 def merge_intervals(timestamps: List[float], base_step: float, margin: float = 0.1) -> List[Tuple[float, float]]:

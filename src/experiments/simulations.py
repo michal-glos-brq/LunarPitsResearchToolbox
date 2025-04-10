@@ -1,3 +1,9 @@
+"""
+Here we store all configurations for simulations of satellites and their instruments - to obtain time intervals of flyovers
+and instrument views.
+"""
+
+
 from astropy.time import Time
 
 
