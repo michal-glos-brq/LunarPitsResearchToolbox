@@ -537,6 +537,12 @@ class RemoteSensingSimulator:
                 )
                 self.threads.append(thread)
 
+        # Await all threads.
+        for thread in self.threads:
+            thread.join()
+
+        Sessions.process_failed_inserts()
+
         update_thread = Sessions.start_background_update_simulation_metadata(
             self.simulation_metadata_id,
             self.simulation_state.current_simulation_timestamp.utc.iso,
@@ -544,9 +550,3 @@ class RemoteSensingSimulator:
             metadata=self.simulation_quality_metadata,
         )
         self.threads.append(update_thread)
-
-        # Await all threads.
-        for thread in self.threads:
-            thread.join()
-
-        Sessions.process_failed_inserts()

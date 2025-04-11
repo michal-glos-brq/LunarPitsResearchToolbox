@@ -36,3 +36,9 @@ typecheck:
 
 docker-clean:
 	@docker image prune -f
+
+
+
+# One af task assignement for simulation, 1st retry
+# ./assign_tasks.py --task remote_sensing --config-name lunar_pit_atlas_mapping_LRO_simulation --name full_run --retry-count 1
+

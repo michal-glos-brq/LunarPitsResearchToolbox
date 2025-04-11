@@ -177,7 +177,7 @@ class BaseKernel:
                         os.remove(filename)
                         os.remove(tmp_filename)
 
-    ### Nesting crime scene start
+    
     def _download_file(self, url: str, filename: str) -> None:
         """
         Synchronously download the file with resume support and retries.
@@ -285,6 +285,10 @@ class AutoUpdateKernel(BaseKernel):
 
 
 class LBLKernel(BaseKernel):
+    """
+    Kernel with a filename and metadata filename with lbl suffix
+    """
+
 
     def __init__(
         self, url: str, filename: str, metadata_url: str, metadata_filename: str, keep_kernel: bool = True
