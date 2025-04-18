@@ -54,6 +54,7 @@ HEADERS = {
 ##########################################################################################
 MOON_STR_ID = "MOON"
 LRO_STR_ID = "LUNAR RECONNAISSANCE ORBITER"
+LRO_INT_ID = -85
 ABBERRATION_CORRECTION = "CN+S"
 
 LRO_DIVINER_FRAME_STR_ID = "LRO_DLRE"

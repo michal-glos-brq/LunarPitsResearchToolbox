@@ -30,8 +30,8 @@ class RemoteSensingTaskRunner(BaseTaskRunner):
             next_time = min(current_time + step, end_time)
 
             task_kwargs = dict(config["simulation_kwargs"])
-            task_kwargs["start_time_et"] = current_time.cxcsec
-            task_kwargs["end_time_et"] = next_time.cxcsec
+            task_kwargs["start_time_cxcsec"] = current_time.cxcsec
+            task_kwargs["end_time_cxcsec"] = next_time.cxcsec
             # It's possible to overrid the name assigned in simulation configuration via CLI parameters
             if simulation_name is not None:
                 task_kwargs["simulation_name"] = simulation_name

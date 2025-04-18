@@ -34,6 +34,7 @@ import logging
 import requests
 from tqdm import tqdm
 from urllib.parse import urljoin
+from typing import Union, Optional
 
 import pandas as pd
 import numpy as np
@@ -166,6 +167,49 @@ class DetailedModelDSKKernel(BaseKernel):
     @property
     def xyz_file_exists(self):
         return os.path.exists(self.xyz_filename)
+
+    def latlon_to_cartesian(self, lat: Union[float, np.ndarray], lon: Union[float, np.ndarray]) -> np.ndarray:
+        """
+        Convert lat/lon to Cartesian (X, Y, Z) coordinates using DSK surface intersection.
+        - lat, lon in degrees (can be float or np.ndarray)
+        - returns Nx3 array of Cartesian coordinates in km
+        """
+        return self.dsk_latlon_to_cartesian(lat, lon, self.filename)
+
+    @staticmethod
+    def dsk_latlon_to_cartesian(
+        lat: Union[float, np.ndarray],
+        lon: Union[float, np.ndarray],
+        dsk_path: str,
+        alt_km: float = 10000.0,  # Good enough for Moon
+    ) -> np.ndarray:
+        """
+        Convert lat/lon to Cartesian (X, Y, Z) coordinates using DSK surface intersection.
+        - lat, lon in degrees (can be float or np.ndarray)
+        - returns Nx3 array of Cartesian coordinates in km
+        """
+        lat = np.radians(lat)
+        lon = np.radians(lon)
+
+        if np.isscalar(lat):
+            lat = np.array([lat])
+            lon = np.array([lon])
+            scalar_input = True
+        else:
+            scalar_input = False
+
+        dsk_handle = spice.dasopr(dsk_path)
+        dladsc = spice.dlabfs(dsk_handle)
+
+        results = []
+        for la, lo in zip(lat, lon):
+            ray_dir = np.array(spice.latrec(1.0, lo, la))
+            ray_start = ray_dir * alt_km
+            _, spoint, found = spice.dskx02(dsk_handle, dladsc, ray_start, -ray_dir)
+            results.append(spoint if found else [np.nan, np.nan, np.nan])
+
+        spice.dascls(dsk_handle)
+        return results[0] if scalar_input else np.array(results)
 
     def remote_dsk_download(self):
         url = urljoin(BUNNY_BASE_URL, f"{BUNNY_STORAGE}")

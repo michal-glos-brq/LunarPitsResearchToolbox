@@ -1,16 +1,26 @@
 import heapq
 from dataclasses import dataclass
-from typing import List, Dict, Optional, Tuple, Iterator
+from typing import List, Dict, Optional, Tuple, Iterator, Union
 
 from astropy.time import Time, TimeDelta
 
 import spiceypy as spice
+
+from src.global_config import SPICE_DECIMAL_PRECISION
 
 
 @dataclass
 class TimeInterval:
     start_et: float  # Ephemeris time (seconds past J2000)
     end_et: float
+
+    @property
+    def start_astropy_time(self) -> Time:
+        return Time(spice.et2utc(self.start_et, 'ISOC', SPICE_DECIMAL_PRECISION), format='isot', scale='utc')
+
+    @property
+    def end_astropy_time(self) -> Time:
+        return Time(spice.et2utc(self.end_et, 'ISOC', SPICE_DECIMAL_PRECISION), format='isot', scale='utc')
 
     def __post_init__(self):
         if self.start_et >= self.end_et:
@@ -22,26 +32,57 @@ class TimeInterval:
         if self.end_et - self.start_et > 1e9:
             raise ValueError("Interval is too large. Please check the values.")
 
+    def is_interval_after(self, other: "TimeInterval") -> bool:
+        """
+        Check if the interval is after another interval.
+        """
+        return self.start_et > other.end_et
+
     def contains(self, et: float) -> bool:
         return self.start_et <= et < self.end_et
+
+    def containes_time(self, time: Time) -> bool:
+        return self.start_et <= spice.utc2et(time.utc.iso) < self.end_et
 
     def overlaps(self, other: "TimeInterval") -> bool:
         return self.start_et < other.end_et and self.end_et > other.start_et
 
+    def is_subinterval(self, other: "TimeInterval") -> bool:
+        return self.start_et >= other.start_et and self.end_et <= other.end_et
+
 
 class IntervalList:
 
-    def __init__(self, instrument_name: str, intervals: List[Tuple[float, float]]):
+    @property
+    def start_et(self) -> float:
+        return self.intervals[0].start_et
+
+    @property
+    def end_et(self) -> float:
+        return self.intervals[-1].end_et
+
+    @property
+    def start_astropy_time(self) -> Time:
+        return self.intervals[0].start_astropy_time
+
+    @property
+    def end_astropy_time(self) -> Time:
+        return self.intervals[-1].end_astropy_time
+
+    def __init__(self, intervals: Union[List[TimeInterval], List[Tuple[float, float]]]):
         if not intervals:
             raise ValueError("Intervals list cannot be empty.")
-        self.intervals = [TimeInterval(start_et, end_et) for start_et, end_et in intervals]
-        self.instrument_name = instrument_name
-        # Index into intervals for linear access - last overlapping interval from last intersection
+        if isinstance(intervals[0], TimeInterval):
+            self.intervals = intervals
+        else:
+            self.intervals = [TimeInterval(start_et, end_et) for start_et, end_et in intervals]
+        self.intervals.sort(key=lambda x: x.start_et)
+        # Linear access optimization: skips intervals before current query window
         self.linear_access_index = 0
 
-    def get_intervals_intersection(
-        self, interval: TimeInterval, linear_access=True, sort_intervals: bool = False
-    ) -> List[TimeInterval]:
+
+
+    def get_intervals_intersection(self, interval: TimeInterval, linear_access=True) -> List[TimeInterval]:
         """
         Logical and on self.intervals and interval from parameters (Retuers subset of self.intervals, does not edit them,
         so it's not strict and, but includes only whole intervals from self.intervals).
@@ -49,27 +90,44 @@ class IntervalList:
         For some level of optimization, we can pass argument to assume linear access and when going
         for interval intersection, we start from the start of last intersection passed as parameter (or 0).
         """
-        if sort_intervals:
-            self.intervals.sort(key=lambda x: x.start_et)
+        if not linear_access:
+            return [iv for iv in self.intervals if iv.overlaps(interval)]
+        # linear scan
+        while (
+            self.linear_access_index < len(self.intervals)
+            and self.intervals[self.linear_access_index].end_et < interval.start_et
+        ):
+            self.linear_access_index += 1
+        result: List[TimeInterval] = []
+        idx = self.linear_access_index
+        while idx < len(self.intervals) and self.intervals[idx].start_et < interval.end_et:
+            if self.intervals[idx].overlaps(interval):
+                result.append(self.intervals[idx])
+            idx += 1
+        self.linear_access_index = idx
+        return result
 
+    def intersection_mask(self, other: "IntervalList", linear_access: bool = True) -> List[bool]:
+        """
+        For each interval in this list, return a boolean indicating
+        whether it overlaps any interval in `other`.
+        """
+        mask: List[bool] = []
         if linear_access:
-            return [i for i in self.intervals if i.overlaps(interval)]
-        else:
-            # Find the first interval which starts at or after the interval's start_et
-            while (
-                self.linear_access_index < len(self.intervals)
-                and self.intervals[self.linear_access_index].end_et < interval.start_et
-            ):
-                self.linear_access_index += 1
+            other.reset_linear_access()
+        for iv in self.intervals:
+            if linear_access:
+                overlaps = other.get_intervals_intersection(iv, linear_access=True)
+            else:
+                overlaps = other.get_intervals_intersection(iv, linear_access=False)
+            mask.append(bool(overlaps))
+        return mask
 
-            result = []
-            start_index = self.linear_access_index
-            while start_index < len(self.intervals) and self.intervals[start_index].start_et < interval.end_et:
-                if self.intervals[start_index].overlaps(interval):
-                    result.append(self.intervals[start_index])
-                start_index += 1
-            self.linear_access_index = start_index
-            return result
+    def reset_linear_access(self):
+        """
+        Reset the linear access index to the beginning.
+        """
+        self.linear_access_index = 0
 
 
 class MultiIntervalQueue:
@@ -92,8 +150,8 @@ class MultiIntervalQueue:
         else:
             return None
 
-    def is_empty(self) -> bool:
-        return len(self.heap) == 0
+    def __bool__(self) -> bool:
+        return bool(self.heap)
 
 
 class IntervalManager:
@@ -103,10 +161,11 @@ class IntervalManager:
     """
 
     def __init__(self, intervals: Dict[str, list[Tuple[float, float]]]):
-        self.intervals: Dict[str, List[TimeInterval]] = {
-            instrument_name: IntervalList(instrument_name, intervals)
+        self.intervals: Dict[str, IntervalList] = {
+            instrument_name: IntervalList(intervals)
             for instrument_name, intervals in intervals.items()
         }
+        self.multi_queue = MultiIntervalQueue(self.intervals)
 
     def get_interval_by_instrument(self, instrument_name: str) -> Optional[IntervalList]:
         """
@@ -121,15 +180,13 @@ class IntervalManager:
         """
         return self.multi_queue.next_interval()
 
-    def is_empty(self) -> bool:
-        return self.multi_queue.is_empty()
-
     def global_time_bounds(self) -> Tuple[float, float]:
         """
         Determine the overall global start and end times from all intervals.
         """
-        min_start = min(
-            interval.start_et for ilist in self.instrument_intervals.values() for interval in ilist.intervals
-        )
-        max_end = max(interval.end_et for ilist in self.instrument_intervals.values() for interval in ilist.intervals)
+        min_start = min(ilist.start_et for ilist in self.intervals.values())
+        max_end = max(ilist.end_et for ilist in self.intervals.values())
         return min_start, max_end
+
+    def __bool__(self) -> bool:
+        return bool(self.multi_queue)

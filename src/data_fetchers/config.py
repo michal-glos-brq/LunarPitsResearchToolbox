@@ -1,3 +1,8 @@
-### Configuration for data fetchers
-MAX_DATA_DOWNLOADS = 20
-MAX_DATA_PROCESSES = 28
+
+
+
+MAX_RETRIES = 128
+DOWNLOAD_TIMEOUT = 60 * 60 * 2 # 2 hours
+DOWNLOAD_CHUNK_SIZE = 8 * 1024 # 8 KB
+
+

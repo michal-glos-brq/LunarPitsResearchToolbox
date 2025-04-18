@@ -7,6 +7,9 @@ from astropy.time import Time, TimeDelta
 import spiceypy as spice
 
 
+from src.SPICE.instruments.instrument import BaseInstrument
+from src.SPICE.kernel_utils.kernel_management import BaseKernelManager
+from src.simulation.filters import BaseFilter
 from src.db.interface import Sessions
 
 
@@ -29,6 +32,13 @@ class DataFetchingEngine:
         self.filter = filter_object
         self.kernel_manager = kernel_manager
         self.threads = []
+
+
+
+    def project_until_next_interval():
+        """Projects collected points until the start of the next interval of interest of whatever instrument"""
+        ...
+
 
 
     def check_threads(self):
@@ -82,7 +92,7 @@ class DataFetchingEngine:
 
     def start_extraction(self):
         """
-        Start the data extraction process.
+        Start the data extraction process. The main loop, controlling other components
         """
         ...
 

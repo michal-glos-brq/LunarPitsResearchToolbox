@@ -2,12 +2,14 @@
 
 import logging
 from abc import ABC, abstractmethod
+from typing import Union
 
 import numpy as np
 import spiceypy as spice
 from scipy.spatial import cKDTree
 from filelock import FileLock
 
+from src.SPICE.kernel_utils.detailed_model import DetailedModelDSKKernel
 from src.db.interface import Sessions
 from src.global_config import LUNAR_RADIUS
 from src.SPICE.config import DSK_KERNEL_LOCK_TIMEOUT, KERNEL_LOCK_POLL_INTERVAL
@@ -69,7 +71,7 @@ class PointFilter(BaseFilter):
         self.dsk_filename = dsk_filename
         self._hard_radius = hard_radius
         with FileLock(dsk_filename + ".lock", timeout=DSK_KERNEL_LOCK_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL):
-            self._load_target_points(dsk_filename)
+            self._load_target_points()
 
     @property
     def name(self) -> str:
@@ -84,35 +86,12 @@ class PointFilter(BaseFilter):
         """Returns distance from our points of interest"""
         return self.kd_tree.query(point)[0]
 
-    def _load_target_points(self, dsk_filename: str):
+    def _load_target_points(self):
         """Fetches crater points and converts lat/lon to Cartesian coordinates using DSK."""
         points = Sessions.get_all_pits_points()
-        lat_rad = np.radians(points["latitude"])
-        lon_rad = np.radians(points["longitude"])
-
-        # Load DSK file and get a valid handle
-
-        dsk_handle = spice.dasopr(dsk_filename)  # Open the DSK file
-        # Find the DSK segment descriptor
-        dladsc = spice.dlabfs(dsk_handle)  # Get the first segment in the file
-
-        cartesian_points = []
-        for lat, lon in zip(lat_rad, lon_rad):
-            # Convert lat/lon to a unit vector for the ray direction
-            cartesians = np.array(spice.latrec(1.0, lon, lat))  # Ensure it's an array
-
-            # We have to simulate observer above the ground, looking at [0,0,0], because interception could not be calculated from within
-            _, spoint, found = spice.dskx02(dsk_handle, dladsc, cartesians * 10_000, (-1) * cartesians)
-
-            if found:
-                cartesian_points.append(spoint)
-            else:
-                logger.warning(f"No surface intercept found for lat: {lat}, lon: {lon}")
-                cartesian_points.append([np.nan, np.nan, np.nan])  # Mark missing points
-
-        # Close the DSK file
-        spice.dascls(dsk_handle)
-
+        cartesian_points = DetailedModelDSKKernel.dsk_latlon_to_cartesian(
+            points["latitude"], points["longitude"], self.dsk_filename
+        )
         # Store computed points
         points["X"], points["Y"], points["Z"] = np.array(cartesian_points).T
         self._target_points = points[["X", "Y", "Z"]].values
@@ -163,7 +142,6 @@ class AreaFilter(BaseFilter):
                 )
             )
 
-
     @staticmethod
     def _name(**kwargs):
         """Obtain the filter unique name without instantiation"""
@@ -207,5 +185,3 @@ class CompositeFilter(BaseFilter):
 
     def rank_point(self, point: np.array) -> float:
         return min([f.rank_point(point) for f in self.filters])
-
-
