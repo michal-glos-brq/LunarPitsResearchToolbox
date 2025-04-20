@@ -7,7 +7,7 @@ from celery import Celery
 
 from src.pipeline.config import REDIS_CONNECTION_STRING
 from src.pipeline.tasks.simulator import run_remote_sensing_simulation
-
+from src.pipeline.tasks.extractor import run_data_extraction
 
 app = Celery("worker", broker=REDIS_CONNECTION_STRING, backend=REDIS_CONNECTION_STRING)
 
@@ -33,3 +33,13 @@ run_remote_sensing_simulation_task = app.task(
     retry_backoff=True,
     retry_kwargs={'max_retries': 5}
 )(run_remote_sensing_simulation)
+
+
+run_data_extraction_task = app.task(
+    name="src.pipeline.tasks.extractor.run_data_extraction",
+    bind=True,
+    autoretry_for=(ConnectionError,),
+    retry_backoff=True,
+    retry_kwargs={'max_retries': 5}
+)(run_data_extraction)
+

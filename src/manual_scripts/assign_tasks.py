@@ -5,7 +5,9 @@ import logging
 from dataclasses import dataclass
 
 from src.experiments.simulations import BaseSimulationConfig
+from src.experiments.extractions import BaseExtractionConfig
 from src.pipeline.dispatchers.simulation_dispatcher import RemoteSensingTaskRunner
+from src.pipeline.dispatchers.extraction_dispatcher import ExtractorTaskRunner
 
 
 @dataclass
@@ -19,6 +21,8 @@ class Task:
 TASK_CLASSES = {
     # src/experiments/simulations.py - contains allconfigurations for this task
     "remote_sensing": Task(BaseSimulationConfig, RemoteSensingTaskRunner),
+    # src/experiments/extractions.py - contains allconfigurations for this task
+    "extraction": Task(BaseExtractionConfig, ExtractorTaskRunner),
 }
 
 
@@ -51,13 +55,13 @@ class TaskConfig:
 def main():
     parser = argparse.ArgumentParser(description="Task runner for lunar simulation experiments.")
     parser.add_argument(
-        "--task", choices=["remote_sensing"], help="Type of task to run (currently only 'remote_sensing' is supported)."
+        "--task", choices=TASK_CLASSES.keys(), help="Type of task to run (currently only 'remote_sensing' is supported)."
     )
     parser.add_argument("--config-name", help="Name of the experiment config to use.")
     parser.add_argument(
         "--dry-run", action="store_true", help="Run in dry run mode (no actual tasks will be submitted)."
     )
-    parser.add_argument("--name", help="Name of the experiment config to use.")
+    parser.add_argument("--name", help="Name of the experiment itself.")
     parser.add_argument("--retry-count", type=int, default=None, help="Indication whether the run is a retry run.")
     args = parser.parse_args()
 

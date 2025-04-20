@@ -10,7 +10,7 @@ import logging
 import queue
 import random
 import threading
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional, Any
 from datetime import datetime
 
 import pandas as pd
@@ -288,7 +288,6 @@ class Sessions:
 
         return collection
 
-
     @staticmethod
     def prepare_simulation_metadata(simulation_metadata: dict) -> bool:
         """
@@ -386,7 +385,9 @@ class Sessions:
         return simulation_task_documents
 
     @staticmethod
-    def insert_simulation_intervals(simulation_name: str, intervals_dict: Dict[str, List[Tuple[float, float]]], threshold: float):
+    def insert_simulation_intervals(
+        simulation_name: str, intervals_dict: Dict[str, List[Tuple[float, float]]], threshold: float, name: str
+    ):
         """
         Inserts simulation time intervals into MongoDB timeseries collection.
         Each interval is stored as a separate document.
@@ -397,25 +398,31 @@ class Sessions:
         documents = []
         for instrument_name, intervals in intervals_dict.items():
             # Delete existing entries for this simulation + instrument
-            delete_result = collection.delete_many({
-                "simulation_name": simulation_name,
-                "instrument_name": instrument_name,
-                "threshold": threshold,
-            })
+            delete_result = collection.delete_many(
+                {
+                    "simulation_name": simulation_name,
+                    "instrument_name": instrument_name,
+                    "threshold": threshold,
+                    "name": name,
+                }
+            )
             logging.info(
                 f"Deleted {delete_result.deleted_count} existing interval documents "
                 f"for simulation '{simulation_name}' and instrument '{instrument_name}'."
             )
 
             for start_et, end_et in intervals:
-                documents.append({
-                    "simulation_name": simulation_name,
-                    "instrument_name": instrument_name,
-                    "created_at": now,
-                    "threshold": threshold,
-                    "start_et": start_et,
-                    "end_et": end_et,
-                })
+                documents.append(
+                    {
+                        "simulation_name": simulation_name,
+                        "instrument_name": instrument_name,
+                        "created_at": now,
+                        "threshold": threshold,
+                        "start_et": start_et,
+                        "end_et": end_et,
+                        "name": name,
+                    }
+                )
 
         if documents:
             collection.insert_many(documents, ordered=False)
@@ -423,13 +430,62 @@ class Sessions:
         else:
             logging.warning("No intervals to insert.")
 
+    @staticmethod
+    def get_simulation_intervals(
+        simulation_name: str,
+        instrument_names: List[str],
+        name: str,
+    ) -> Dict[str, List[Tuple[float, float]]]:
+        """
+        Retrieve simulation intervals from Mongo, grouped and sorted per instrument.
+
+        Args:
+          simulation_name: the simulation_name you used when inserting.
+          instrument_names: if provided, only pull these instruments (List[str]).
+          threshold: if provided, filter on the inserted threshold.
+          name: if provided, filter on the 'name' tag field.
+
+        Returns:
+          Dict mapping each instrument_name to a list of (start_et, end_et),
+          sorted by start_et then end_et.
+        """
+        session = Sessions.get_db_session(SIMULATION_DB_NAME)
+        coll = session[SIMULATION_TIME_INTERVAL_COLLECTION_NAME]
+
+        # Build query
+        query: Dict[str, Any] = {"simulation_name": simulation_name}
+        query["instrument_name"] = {"$in": instrument_names}
+        query["name"] = name
+
+        # Fetch only the fields we need, sorted
+        cursor = coll.find(query, {"instrument_name": 1, "start_et": 1, "end_et": 1, "_id": 0}).sort(
+            [
+                ("instrument_name", 1),
+                ("start_et", 1),
+                ("end_et", 1),
+            ]
+        )
+
+        intervals: Dict[str, List[Tuple[float, float]]] = {}
+        for doc in cursor:
+            instr = doc["instrument_name"]
+            intervals.setdefault(instr, []).append((doc["start_et"], doc["end_et"]))
+
+        # If instrument_names was provided, ensure all keys exist
+        if instrument_names is not None:
+            for instr in instrument_names:
+                intervals.setdefault(instr, [])
+
+        return intervals
+
     ##########################################################################################
     #####                               Data Extraction                                  #####
     ##########################################################################################
 
-
     @staticmethod
-    def prepare_extraction_collections(instrument_name: str, timeseries: Dict, indices: List[str] = ["et", "meta.simulation_id"]):
+    def prepare_extraction_collections(
+        instrument_name: str, timeseries: Dict, indices: List[str] = ["et", "meta.simulation_id"]
+    ):
         """
         Ensures collections exist for probably RDR dataset extraction per instrument
 
@@ -468,8 +524,6 @@ class Sessions:
             collection.create_index(index)
 
         return collection
-
-
 
     #### TODO: Implement after the extraction loop is implemented
     @staticmethod
@@ -524,7 +578,6 @@ class Sessions:
             update_fields["metadata"] = metadata
         session = Sessions.get_db_session(SIMULATION_DB_NAME)
         session[SIMULATION_METADATA_COLLECTION].update_one({"_id": metadata_id}, {"$set": update_fields})
-
 
     ##########################################################################################
     #####                               Background Tasks                                 #####

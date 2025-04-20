@@ -3,7 +3,7 @@ import logging
 from bisect import bisect_right
 from dataclasses import dataclass
 from functools import total_ordering
-from typing import List, Dict, Optional, Tuple, Union
+from typing import List, Dict, Optional, Tuple, Union, Any
 
 from astropy.time import Time
 import spiceypy as spice
@@ -20,6 +20,15 @@ logger = logging.getLogger(__name__)
 class TimeInterval:
     start_et: float  # Ephemeris time (seconds past J2000)
     end_et: float
+
+    def to_json(self) -> Dict[str, float]:
+        """JSON‑friendly dict."""
+        return {"start_et": self.start_et, "end_et": self.end_et}
+
+    @classmethod
+    def from_json(cls, data: Dict[str, Any]) -> "TimeInterval":
+        """Reconstruct from to_json output."""
+        return cls(data["start_et"], data["end_et"])
 
     @property
     def start_astropy_time(self) -> Time:
@@ -101,6 +110,16 @@ class IntervalList:
         # precompute sorted end times for bisect
         self._ends = [iv.end_et for iv in self.intervals]
 
+    def to_json(self) -> List[Dict[str, float]]:
+        """List of interval dicts."""
+        return [iv.to_json() for iv in self.intervals]
+
+    @classmethod
+    def from_json(cls, data: List[Dict[str, Any]]) -> "IntervalList":
+        """Reconstruct from to_json output."""
+        ivs = [TimeInterval.from_json(d) for d in data]
+        return cls(ivs)
+
     @property
     def start_et(self) -> float:
         return self.intervals[0].start_et
@@ -128,7 +147,7 @@ class IntervalList:
         for iv in self.intervals[i:]:
             if iv.start_et >= target.end_et:
                 break
-            # by construction iv.end_et > target.start_et and iv.start_et < target.end_et 
+            # by construction iv.end_et > target.start_et and iv.start_et < target.end_et
             results.append(iv)
         return results
 
@@ -177,6 +196,8 @@ class MultiIntervalQueue:
     def __bool__(self) -> bool:
         return bool(self.heap)
 
+    def __len__(self) -> int:
+        return len(self.heap)
 
 class IntervalManager:
     """
@@ -189,6 +210,21 @@ class IntervalManager:
             instrument_name: IntervalList(intervals) for instrument_name, intervals in intervals.items()
         }
         self.multi_queue = MultiIntervalQueue(self.intervals)
+
+    def to_json(self) -> Dict[str, List[Dict[str, float]]]:
+        """
+        Serialize to a JSON‑friendly dict:
+          { instrument_name: [ {start_et:…, end_et:…}, … ], … }
+        """
+        return {name: ilist.to_json() for name, ilist in self.intervals.items()}
+
+    @classmethod
+    def from_json(cls, data: Dict[str, List[Dict[str, float]]]) -> "IntervalManager":
+        """
+        Reconstruct an IntervalManager from its to_json output.
+        """
+        raw = {name: [(d["start_et"], d["end_et"]) for d in lst] for name, lst in data.items()}
+        return cls(raw)
 
     def split_by_times(self, et_points: List[float]) -> List["IntervalManager"]:
         """
@@ -261,3 +297,10 @@ class IntervalManager:
 
     def __bool__(self) -> bool:
         return bool(self.multi_queue)
+
+    def __repr__(self) -> str:
+        """
+        Show each instrument’s list of intervals in one line.
+        """
+        parts = ", ".join(f"{name}: {ilist}" for name, ilist in self.intervals.items())
+        return f"IntervalManager({{{parts}}})"

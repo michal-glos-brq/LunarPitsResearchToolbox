@@ -14,9 +14,7 @@ class RemoteSensingTaskRunner(BaseTaskRunner):
     Splits the experiment time range into chunks and dispatches Celery tasks.
     """
 
-    def run(self, config_name: str, dry_run: bool = True, simulation_name: str = None, retry_count: Optional[int] = None):
-
-        config = BaseSimulationConfig.get_config_dict(config_name)
+    def run(self, config: BaseSimulationConfig, dry_run: bool = True, simulation_name: str = None, retry_count: Optional[int] = None):
 
         start_time = config["start_time"]
         end_time = config["end_time"]
@@ -25,13 +23,13 @@ class RemoteSensingTaskRunner(BaseTaskRunner):
         current_time = start_time
         task_counter = 0
 
-        logging.info(f"Submitting tasks for experiment: {config_name}")
+        logging.info(f"Submitting tasks for experiment: {config.experiment_name}; run {simulation_name}")
         while current_time < end_time:
             next_time = min(current_time + step, end_time)
 
             task_kwargs = dict(config["simulation_kwargs"])
-            task_kwargs["start_time_cxcsec"] = current_time.cxcsec
-            task_kwargs["end_time_cxcsec"] = next_time.cxcsec
+            task_kwargs["start_time_iso"] = current_time.iso
+            task_kwargs["end_time_iso"] = next_time.iso
             # It's possible to overrid the name assigned in simulation configuration via CLI parameters
             if simulation_name is not None:
                 task_kwargs["simulation_name"] = simulation_name

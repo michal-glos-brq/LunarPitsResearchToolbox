@@ -202,7 +202,7 @@ class DataFetchingEngine:
             retry_count,
         )
 
-        self.extraction_state.kernel_manager.activate(self.extraction_state.start_time)
+        self.extraction_state.kernel_manager.step(self.extraction_state.start_time)
         self.data_connectors = self.setup_data_connectors()
 
         # Do the mongo DB

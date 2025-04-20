@@ -1,34 +1,38 @@
 import uuid
 import logging
-from typing import Optional
+from typing import Optional, Dict
 
 from astropy.time import Time, TimeDelta
 
 from src.SPICE.kernel_utils.kernel_management import LROKernelManager, GRAILKernelManager
-from src.SPICE.instruments import lro as lro_instruments
-from src.SPICE.instruments import grail as grail_instruments
+from src.SPICE.instruments.lro import (
+    DivinerInstrument,
+    LolaInstrument,
+    MiniRFInstrument,
+    LROCWACInstrument,
+    LROCNACInstrument,
+)
+from src.SPICE.instruments.grail import GrailAInstrument, GrailBInstrument
 from src.simulation.simulator import RemoteSensingSimulator
-from src.simulation import FILTER_MAP
+from src.SPICE.filters import FILTER_MAP
 
 
 logger = logging.getLogger(__name__)
 
 
-KERNEL_MANAGER_MAP = {
+KERNEL_MANAGER_MAP: Dict[str, type] = {
     "LRO": LROKernelManager,
     "GRAIL": GRAILKernelManager,
 }
 
-# We can lay them out like this, because sanity checks are done further down the line
-# Simulation e.b. works with only one satellite (is checked)
-INSTRUMENT_MAP = {
-    lro_instruments.DivinerInstrument.name: lro_instruments.DivinerInstrument,
-    lro_instruments.LolaInstrument.name: lro_instruments.LolaInstrument,
-    lro_instruments.MiniRFInstrument.name: lro_instruments.MiniRFInstrument,
-    lro_instruments.LROCWACInstrument.name: lro_instruments.LROCWACInstrument,
-    lro_instruments.LROCNACInstrument.name: lro_instruments.LROCNACInstrument,
-    grail_instruments.GrailAInstrument.name: grail_instruments.GrailAInstrument,
-    grail_instruments.GrailBInstrument.name: grail_instruments.GrailBInstrument,
+INSTRUMENT_MAP: Dict[str, type] = {
+    DivinerInstrument.name: DivinerInstrument,
+    LolaInstrument.name: LolaInstrument,
+    MiniRFInstrument.name: MiniRFInstrument,
+    LROCWACInstrument.name: LROCWACInstrument,
+    LROCNACInstrument.name: LROCNACInstrument,
+    GrailAInstrument.name: GrailAInstrument,
+    GrailBInstrument.name: GrailBInstrument,
 }
 
 
@@ -37,8 +41,8 @@ INSTRUMENT_MAP = {
 # @app.task(bind=True)
 def run_remote_sensing_simulation(
     self,
-    start_time_cxcsec: float,
-    end_time_cxcsec: float,
+    start_time_iso: str,
+    end_time_iso: str,
     instrument_names: list[str],
     kernel_manager_type: str,
     filter_type: str,
@@ -66,7 +70,7 @@ def run_remote_sensing_simulation(
     """
 
     logger.info(
-        f"Received args: start_time_cxcsec={start_time_cxcsec}, end_time_cxcsec={end_time_cxcsec}, "
+        f"Received args: start_time_cxcsec={start_time_iso}, end_time_cxcsec={end_time_iso}, "
         f"instrument_names={instrument_names}, kernel_manager_type={kernel_manager_type}, "
         f"kernel_manager_kwargs={kernel_manager_kwargs}, filter_kwargs={filter_kwargs}, "
         f"filter_type={filter_type}, simulation_name={simulation_name}, "
@@ -75,8 +79,8 @@ def run_remote_sensing_simulation(
 
     try:
         # Astropy works for 8 decimal places, hence the 8
-        start_time = Time(start_time_cxcsec, format="cxcsec", scale="tdb")
-        end_time = Time(end_time_cxcsec, format="cxcsec", scale="tdb")
+        start_time = Time(start_time_iso, format="isot", scale="utc")
+        end_time = Time(end_time_iso, format="isot", scale="utc")
     except Exception as e:
         raise ValueError(f"Invalid time format: {e}")
 

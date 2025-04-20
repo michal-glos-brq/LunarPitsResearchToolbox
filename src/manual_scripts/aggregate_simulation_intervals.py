@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from src.db.interface import Sessions
 from src.experiments.simulations import BaseSimulationConfig
-from src.simulation import FILTER_MAP
+from src.SPICE.filters import FILTER_MAP
 from src.global_config import TQDM_NCOLS
 
 logger = logging.getLogger(__name__)
@@ -153,6 +153,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Merge simulation timestamps into time intervals.")
     parser.add_argument("--config-name", help="Name of the experiment config to use.", required=True)
     parser.add_argument("--sim-name", help="Name of the simulation run to use.", required=True)
+    parser.add_argument("--interval-name", help="Name of the intervals to save for future extraction.", required=True)
     parser.add_argument(
         "--threshold",
         help="Treshold for additional filtering of data (half FOV widths implicitly added).",
@@ -162,4 +163,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     result = aggregate_simulation_intervals(args.config_name, args.sim_name, threshold=args.threshold)
-    Sessions.insert_simulation_intervals(args.sim_name, result, args.threshold)
+    Sessions.insert_simulation_intervals(args.sim_name, result, args.threshold, args.interval_name)

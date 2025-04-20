@@ -189,3 +189,10 @@ class CompositeFilter(BaseFilter):
 
     def rank_point(self, point: np.array) -> float:
         return min([f.rank_point(point) for f in self.filters])
+
+
+
+FILTER_MAP = {
+    "point": PointFilter,
+    "area": AreaFilter,
+}
