@@ -13,10 +13,11 @@ import spiceypy as spice
 from astropy.time import Time, TimeDelta
 from threading import Thread
 
+from src.SPICE.utils import SPICELog
 from src.SPICE.kernel_utils.kernel_management import BaseKernelManager
 from src.SPICE.instruments.instrument import BaseInstrument, ProjectionPoint
 from src.db.interface import Sessions
-from src.simulation.filters import BaseFilter
+from src.SPICE.filters import BaseFilter
 from src.simulation.config import (
     SIMULATION_STEP,
     DYNAMIC_MAX_BUFFER_FOV_WIDTH_SIZE,
@@ -31,32 +32,6 @@ from src.simulation.config import (
 )
 from src.global_config import SUPRESS_TQDM, TQDM_NCOLS
 
-
-class SPICELog:
-
-    interactive_progress: bool = True
-    supress_output: bool = False
-
-    @staticmethod
-    def log_spice_exception(e: Exception, context: str = ""):
-        """
-        Log the exception with its type and any SPICE error state.
-        """
-        try:
-            if SPICELog.supress_output:
-                return
-            err_type = type(e).__name__
-            msg = f"{context} Exception: [{err_type}] {e}"
-            if spice.failed():
-                spice_error_message = spice.getmsg("SHORT")
-                msg += f" | SPICE error: {spice_error_message}"
-                spice.reset()
-            if SPICELog.interactive_progress:
-                tqdm.write(msg)
-            else:
-                logging.warning(msg)
-        except Exception:
-            ...
 
 
 class DynamicMaxBuffer:
@@ -243,14 +218,13 @@ class RemoteSensingSimulator:
             self.simulation_state.max_speed_counter -= 1
 
         rank = self.filter.rank_point(spacecraft_position)
-        distances_to_thresholds = []
+
         for instrument in self.instruments:
             instrument_state = self.instrument_simulation_states[instrument.name]
-            distance = rank - (
+            score = rank - (
                 instrument_state.heights.maximum + instrument_state.fov_widths.maximum + self.filter.hard_radius
             )
-            if distance > 0:
-                distances_to_thresholds.append(distance)
+            if score > 0:
                 continue
 
             try:
@@ -258,27 +232,27 @@ class RemoteSensingSimulator:
                     self.simulation_state.current_simulation_timestamp_et
                 )
                 rank = self.filter.rank_point(projection.projection)
-                distance = rank - (self.filter.hard_radius + instrument_state.fov_widths.maximum) * TOLERANCE_MARGIN
-                if distance <= 0:
+                score = rank - (self.filter.hard_radius + instrument_state.fov_widths.maximum) * TOLERANCE_MARGIN
+                if score <= 0:
                     # Use simulation state's current timestamp.
                     datetime_current_timestamp = self.simulation_state.current_simulation_timestamp.to_datetime()
                     instrument_state.positive_sensing_batch.append(
                         {
                             "et": self.simulation_state.current_simulation_timestamp_et,
                             "timestamp_utc": datetime_current_timestamp,
-                            "distance": distance,
+                            "distance": rank,
                             "boresight": projection.projection.tolist(),
                             "meta": {
+                                "score": score,
                                 "simulation_id": self.simulation_metadata_id,
                                 "satellite_position": spacecraft_position.tolist(),
-                                "fov_width": instrument_state.fov_widths.maximum,
+                                "distance_margin": rank - self.filter.hard_radius,
                                 "height": instrument_state.heights.maximum,
                             },
                         }
                     )
                     instrument_state.total_success += 1
-                else:
-                    distances_to_thresholds.append(distance)
+
             except Exception as e:
                 SPICELog.log_spice_exception(e, f"Error calculating projection for {instrument.name}")
                 self.flush_SPICE()

@@ -9,25 +9,17 @@ from concurrent.futures import ThreadPoolExecutor, Future
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import pandas as pd
+from bs4 import BeautifulSoup as bs
+from urllib.parse import urljoin
 from cachetools import LRUCache
 
 from src.SPICE.instruments.instrument import BaseInstrument
-from src.simulation.filters import BaseFilter
+from src.SPICE.filters import BaseFilter
 from src.data_fetchers.data_connectors.virtual_file import VirtualFile
 from src.data_fetchers.interval_manager import IntervalList, TimeInterval
-
+from src.SPICE.kernel_utils.kernel_management import BaseKernelManager
 
 logger = logging.getLogger(__name__)
-
-
-class BaseConnectorConfig:
-    # Pass a list of callables. When callable returns False, the file is filtered out
-    # Usefull for data sw version, dataquaolity flags and similar
-    virtual_file_meta_filters: List[Callable] = []
-
-    def filter_virtual_file_metadata(self, virtual_file: VirtualFile) -> bool:
-        """Returns True if success, false if to be filtered out"""
-        return all(filter_func(virtual_file.metadata) for filter_func in self.virtual_file_meta_filters)
 
 
 class BaseDataConnector(ABC):
@@ -35,17 +27,26 @@ class BaseDataConnector(ABC):
     Base class for data connection, specific datasets are configured within their specific files.
     """
 
+    name = None
+    orbiting_body = "MOON"
+    timeseries = None
+    indices = None
+
     _session: Optional[requests.Session] = None
     _executor = ThreadPoolExecutor(max_workers=24)
 
-    def __init__(self, time_intervals: IntervalList, config: Optional[BaseConnectorConfig] = None):
+    def __init__(
+        self,
+        time_intervals: IntervalList,
+        kernel_manager: BaseKernelManager,
+    ):
         """
         With config, we can specify:
 
         -  additional filtering conditions for virtual_files meta attribute (PDS3 parsed lbl file into dict)
 
         """
-        self.config = config or BaseConnectorConfig()
+        self.kernel_manager = kernel_manager
         self.remote_files: List[VirtualFile] = self.discover_files(time_intervals)
         self.current_file_idx = 0
         # Start fetching the first file, start prefetching the next one too
@@ -53,6 +54,10 @@ class BaseDataConnector(ABC):
             file.download()
         self.current_file.wait_to_be_downloaded()
         self._parse_current_file()
+        if self.timeseries is None:
+            raise NotImplementedError("Timeseries must be set in the derived class.")
+        if self.indices is None:
+            raise NotImplementedError("Indices must be set in the derived class.")
 
     # Download logic implemented below is meant for smaller files
     @classmethod
@@ -110,9 +115,7 @@ class BaseDataConnector(ABC):
         ...
 
     @abstractmethod
-    def process_data_entry(
-        self, data_entry: Dict, instrument: BaseInstrument, filter: BaseFilter, scpos_cache: Optional[LRUCache] = None
-    ) -> Dict:
+    def process_data_entry(self, data_entry: Dict, instrument: BaseInstrument, filter: BaseFilter) -> Dict:
         """
         Process a single data entry. Instrument will be reprojected and filtered with more precision
 
@@ -120,32 +123,61 @@ class BaseDataConnector(ABC):
         """
         ...
 
+    def validate_metadata(self, _: Dict) -> bool:
+        """
+        Validate the metadata of the file. This is a placeholder for any specific validation logic.
+        """
+        # Placeholder for actual validation logic
+        return True
+
     def read_interval(self, time_interval: TimeInterval) -> List[Dict]:
-        """Fetch data for the specified time interval. Files arefetched BASED on the interval list, so any discrepancies mean either file was not found or something terrible happened"""
-        while not self.current_file.interval.overlaps(
-            time_interval
-        ) and not self.current_file.interval.is_interval_after(time_interval):
-            # If the current file does not overlap with the requested time interval, load the next file
+        """
+        Fetch data for the specified time interval. Files arefetched BASED on the interval list,
+        so any discrepancies mean either file was not found or something terrible happened
+        """
+        data: List[Dict] = []
+
+        # 1) Skip all files that end before our window starts
+        while self.current_file.interval.is_interval_before(time_interval):
             if not self._load_next_file():
-                logger.error("No more files to load, something went wrong")
+                logger.error("No files cover the start of the requested interval.")
                 return []
 
-        if not self.current_file.interval.overlaps(time_interval):
-            raise ValueError(f"Inconsistent timeinterval: {time_interval} not in current file")
+        # 2) If the first remaining file starts after our window ends, nothing to do
+        if self.current_file.interval.is_interval_after(time_interval):
+            logger.error("First available file begins after the end of the requested interval.")
+            return []
 
-        data = []
-        while self.current_file.interval.overlaps(time_interval) and not self.current_file.interval.is_subinterval(
-            time_interval
-        ):
-            # This means the requested interval overlaps with teh current file intererval, but oges further
-            data += self._get_interval_data_from_current_file(time_interval)
+        # 3) Now consume every file that overlaps our window
+        while True:
+            file_iv = self.current_file.interval
+
+            if not file_iv.overlaps(time_interval):
+                break  # No more overlaps = done
+
+            # Compute the exact slice of interest
+            sub_iv = file_iv & time_interval
+            if sub_iv is None:
+                logger.warning(f"Unexpected: {file_iv} overlaps but & returned None. Falling back.")
+                sub_iv = TimeInterval(
+                    max(file_iv.start_et, time_interval.start_et),
+                    min(file_iv.end_et, time_interval.end_et),
+                )
+
+            # Fetch the matching chunk from the current file
+            chunk = self._get_interval_data_from_current_file(sub_iv)
+            if not isinstance(chunk, list):
+                raise TypeError(f"_get_interval_data_from_current_file must return List[Dict], got {type(chunk)}")
+
+            data.extend(chunk)
+
+            # Stop if we reached the end of the requested window
+            if file_iv.end_et >= time_interval.end_et:
+                break
+
             if not self._load_next_file():
-                logger.error("No more files to load, something went wrong")
-                return data
-
-        if self.current_file.interval.overlaps(time_interval):
-            data += self._get_interval_data_from_current_file(time_interval)
-
+                logger.error("Reached end of files before covering interval.")
+                break
         return data
 
     def _load_next_file(self) -> bool:

@@ -23,6 +23,16 @@ class ProjectionPoint:
     projection_trgepc: float
     spacecraft_relative: np.array
 
+    def to_data(self):
+        return {
+            "cx_projected": self.projection[0],
+            "cy_projected": self.projection[1],
+            "cz_projected": self.projection[2],
+            "trgepc": self.projection_trgepc,
+            "sc_pos_x" : self.spacecraft_relative[0] + self.projection[0],
+            "sc_pos_y" : self.spacecraft_relative[1] + self.projection[1],
+            "sc_pos_z" : self.spacecraft_relative[2] + self.projection[2],
+        }
 
 class BaseInstrument(ABC):
     """This class serves the purpose of defining all the configurable attributes of instruments"""
@@ -32,6 +42,7 @@ class BaseInstrument(ABC):
     # Use arbitrary absurd default values, until it's possible to be computed
     _fov_width = 10000
     _height = 1000000
+    _orbiting_body = "MOON"
 
     def __init__(self):
         # Static boresight - aggregated boresight in static frame, used for instruments with dynamic boresight relatively to the satellite
@@ -66,11 +77,11 @@ class BaseInstrument(ABC):
 
     def calculate_spacecraft_position(self, et: float, frame: str) -> np.array:
         """Returns spacecraft position in the given frame at the given time"""
-        return spice.spkpos(self.satellite_name, et, frame, ABBERRATION_CORRECTION, "MOON")[0]
+        return spice.spkpos(self.satellite_name, et, frame, "NONE", self._orbiting_body)[0]
 
     def calculate_spacecraft_position_and_velocity(self, et: float, frame: str) -> Tuple[np.array]:
         """Returns spacecraft position and velocity in the given frame at the given time"""
-        state = spice.spkezr(self.satellite_name, et, frame, ABBERRATION_CORRECTION, "MOON")[0]
+        state = spice.spkezr(self.satellite_name, et, frame, "NONE", self._orbiting_body)[0]
         return state[:3], state[3:]
 
     def recalculate_bounds_to_boresight_distance(self, et: float = 0) -> np.array:

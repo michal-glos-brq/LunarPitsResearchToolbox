@@ -11,6 +11,7 @@ from src.data_fetchers.config import MAX_RETRIES, DOWNLOAD_TIMEOUT, DOWNLOAD_CHU
 from src.data_fetchers.interval_manager import TimeInterval
 
 
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -31,100 +32,133 @@ class VirtualFile:
         self._done = threading.Event()
 
     def _download_worker(self):
-        """Download the file in a separate thread. Used for alrger files"""
-        retries = 0
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; MyDownloader/1.0)"}
-        corruption = False
+        """
+        Download the file in a separate thread, with resume support and retries.
+        """
+        def _reset_buffer():
+            """Drop the partial download and start over."""
+            try:
+                self.file.close()
+            except Exception:
+                pass
+            self.file = BytesIO()
 
+        retries = 0
+        self.corrupted = False
         logger.info(f"Starting download for {self.url}")
 
-        while retries < MAX_RETRIES:
-            try:
-                resume_pos = self.file.tell()  # Position in BytesIO buffer
+        try:
+            while retries < MAX_RETRIES:
+                resume_pos = self.file.tell()
+                headers = {"User-Agent": "Mozilla/5.0 (compatible; MyDownloader/1.0)"}
                 if resume_pos:
                     headers["Range"] = f"bytes={resume_pos}-"
 
-                with requests.get(self.url, stream=True, timeout=DOWNLOAD_TIMEOUT, headers=headers) as r:
-                    if r.status_code == 416:  # Range not satisfiable
-                        logger.warning(f"Range not satisfiable, resetting download for {self.url}")
-                        self.file = BytesIO()
-                        resume_pos = 0
-                        headers.pop("Range", None)
-                        continue
+                # 1) Attempt the HTTP GET
+                try:
+                    resp = requests.get(self.url, stream=True,
+                                        timeout=DOWNLOAD_TIMEOUT,
+                                        headers=headers)
+                except Exception as e:
+                    logger.warning(f"[{retries+1}/{MAX_RETRIES}] Network error: {e}")
+                    retries += 1
+                    time.sleep(min(2**retries, 60))
+                    continue
 
-                    r.raise_for_status()
+                # 2) Handle 416 → restart from zero
+                if resp.status_code == 416:
+                    logger.warning(f"[{retries+1}/{MAX_RETRIES}] Range not satisfiable; resetting buffer")
+                    _reset_buffer()
+                    retries += 1
+                    time.sleep(min(2**retries, 60))
+                    continue
 
-                    # Determine expected total size
-                    if resume_pos:
-                        cr = r.headers.get("Content-Range")
-                        if cr and "/" in cr:
-                            try:
-                                self._expected_size = int(cr.split("/")[-1])
-                            except ValueError:
-                                self._expected_size = None
-                        else:
-                            logger.warning(f"Server did not return Content-Range, restarting download for {self.url}")
-                            self.file = BytesIO()
-                            resume_pos = 0
-                            headers.pop("Range", None)
-                            continue
+                # 3) Any other HTTP error?
+                if not resp.ok:
+                    logger.warning(f"[{retries+1}/{MAX_RETRIES}] HTTP {resp.status_code}")
+                    retries += 1
+                    time.sleep(min(2**retries, 60))
+                    continue
+
+                # 4) Figure out expected size
+                if resume_pos and resp.status_code == 206:
+                    cr = resp.headers.get("Content-Range", "")
+                    if "/" in cr:
+                        try:
+                            expected = int(cr.split("/",1)[1])
+                        except ValueError:
+                            expected = None
                     else:
-                        cl = r.headers.get("Content-Length")
-                        self._expected_size = int(cl) if cl and cl.isdigit() else None
+                        logger.warning("Invalid Content-Range on resume; restarting")
+                        _reset_buffer()
+                        retries += 1
+                        time.sleep(min(2**retries, 60))
+                        continue
+                else:
+                    cl = resp.headers.get("Content-Length", "")
+                    expected = int(cl) if cl.isdigit() else None
 
-                    if self._expected_size is None or self._expected_size <= 0:
-                        if not corruption:
-                            corruption = True
-                            logger.warning(f"Remote file seems empty or corrupt, will retry: {self.url}")
-                        else:
-                            logger.error(f"File {self.url} looks corrupted on remote server, aborting.")
-                            self.corrupted = True
-                            return
+                # 5) Stream into buffer
+                for chunk in resp.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
+                    if chunk:
+                        self.file.write(chunk)
 
-                    # Read and write to in-memory buffer
-                    for chunk in r.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
-                        if chunk:
-                            self.file.write(chunk)
+                actual = self.file.tell()
+                if actual == 0:
+                    logger.warning(f"[{retries+1}/{MAX_RETRIES}] No data received; restarting")
+                    _reset_buffer()
+                    retries += 1
+                    time.sleep(min(2**retries, 60))
+                    continue
 
-                # Verify size
-                actual_size = self.file.tell()
-                if self._expected_size is not None and actual_size != self._expected_size:
-                    raise ValueError(f"Size mismatch: expected {self._expected_size} bytes, got {actual_size} bytes")
+                # 6) Verify size if known
+                if expected is not None and actual != expected:
+                    logger.warning(
+                        f"[{retries+1}/{MAX_RETRIES}] Size mismatch: "
+                        f"expected {expected}, got {actual}; restarting"
+                    )
+                    _reset_buffer()
+                    retries += 1
+                    time.sleep(min(2**retries, 60))
+                    continue
 
-                logger.debug(f"Successfully downloaded {self.url} into memory")
+                # 7) Success!
                 self.file.seek(0)
+                logger.info(f"Downloaded {self.url} ({actual} bytes)")
                 return
 
-            except Exception as e:
-                retries += 1
-                logger.warning(f"Attempt {retries} failed to download {self.url}: {e}")
-                sleep_time = max((2**retries), 120) + (random.random() * retries)
-                if retries < MAX_RETRIES:
-                    time.sleep(sleep_time)
-                else:
-                    logger.error(f"Failed to download {self.url} after {MAX_RETRIES} attempts")
-                    self.corrupted = True
-                    return
-            finally:
-                self._done.set()
+            # Retries exhausted
+            logger.error(f"Failed to download after {MAX_RETRIES} attempts: {self.url}")
+            self.corrupted = True
+
+        finally:
+            # Always signal done, exactly once
+            self._done.set()
+
+
+    def assert_download_ok(self):
+        if self.corrupted:
+            raise RuntimeError(f"Download failed for {self.url}")
+
 
     def download(self):
         """Start download in background thread."""
-        if self._thread is None:
+        if self._thread is None or not self._thread.is_alive():
             self._thread = threading.Thread(target=self._download_worker, daemon=True)
             self._thread.start()
 
     def unload(self):
         """Unload the file content."""
         logger.info(f"Unloading {self.url}")
+        if self._thread:
+            self._done.wait()  # Wait in case we still download
+            del self._thread
+            self._thread = None
         if self.file:
             self.file.close()
             del self.file
-            self.file = None
-        if self._thread:
-            del self._thread
-            self._thread = None
-        if self.data:
+            self.file = BytesIO()
+        if self.data is not None:
             del self.data
             self.data = None
         self._done.clear()
@@ -136,3 +170,4 @@ class VirtualFile:
     def wait_to_be_downloaded(self, timeout=None):
         """Block until download is finished."""
         self._done.wait(timeout=timeout)
+        self.assert_download_ok()

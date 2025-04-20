@@ -2,14 +2,14 @@
 """
 This is pretty simple script, which only aggregates simulation data into intervals (not sampled, but defined by)
 
-Strenght of this architecture is its idempotency (this is prioritized all over the codebase). No matter whether the simulation was ran 100 times, the results 
+Strenght of this architecture is its idempotency (this is prioritized all over the codebase). No matter whether the simulation was ran 100 times, the results
 will be the same. Effectively, running more simulations might lead to the same effects as oversampling, which would effectively be irrelevant.
 """
 
 import logging
 import argparse
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 from tqdm import tqdm
 
@@ -56,7 +56,9 @@ def merge_intervals(timestamps: List[float], base_step: float, margin: float = 0
     return intervals
 
 
-def aggregate_simulation_intervals(config_name: str, simulation_name: str) -> Dict[str, List[Tuple[float, float]]]:
+def aggregate_simulation_intervals(
+    config_name: str, simulation_name: str, threshold: Optional[float] = None
+) -> Dict[str, List[Tuple[float, float]]]:
     """
     Aggregates simulation point timestamps into merged time intervals for each instrument.
 
@@ -127,7 +129,10 @@ def aggregate_simulation_intervals(config_name: str, simulation_name: str) -> Di
         for task_doc in tqdm(simulation_tasks, desc=f"Iterating through simulations: {instrument}", ncols=TQDM_NCOLS):
             sim_id = task_doc["_id"]
             # Query the simulation points for this simulation task, sorting by "et" in ascending order. Tiemout to 100 minutes
-            cursor = collection.find({"meta.simulation_id": sim_id}, {"et": 1}, max_time_ms=6000000).sort("et", 1)
+            query = {"meta.simulation_id": sim_id}
+            if threshold is not None:
+                query["meta.distance_margin"] = {"$lte": threshold}
+            cursor = collection.find(query, {"et": 1}, max_time_ms=6000000).sort("et", 1)
             for doc in cursor:
                 if "et" in doc:
                     all_et_values.append(doc["et"])
@@ -148,8 +153,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Merge simulation timestamps into time intervals.")
     parser.add_argument("--config-name", help="Name of the experiment config to use.", required=True)
     parser.add_argument("--sim-name", help="Name of the simulation run to use.", required=True)
+    parser.add_argument(
+        "--threshold",
+        help="Treshold for additional filtering of data (half FOV widths implicitly added).",
+        required=False,
+        default=None,
+    )
     args = parser.parse_args()
 
-    result = aggregate_simulation_intervals(args.config_name, args.sim_name)
-    Sessions.insert_simulation_intervals("full_run", result)
-
+    result = aggregate_simulation_intervals(args.config_name, args.sim_name, threshold=args.threshold)
+    Sessions.insert_simulation_intervals(args.sim_name, result, args.threshold)

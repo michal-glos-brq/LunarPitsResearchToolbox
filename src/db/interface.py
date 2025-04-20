@@ -26,6 +26,8 @@ from src.db.config import (
     SIMULATION_METADATA_COLLECTION,
     MAX_MONGO_RETRIES,
     SIMULATION_TIME_INTERVAL_COLLECTION_NAME,
+    EXTRACTOR_DB_NAME,
+    EXTRACTOR_METADATA_COLLECTION,
 )
 
 
@@ -208,7 +210,7 @@ class Sessions:
         failed_collection_name = f"{instrument_name}_failed"
 
         def create_timeseries_collection(name):
-            for attempt in range(3):
+            for attempt in range(5):
                 try:
                     session.create_collection(
                         name,
@@ -224,7 +226,7 @@ class Sessions:
                 except errors.OperationFailure as e:
                     if e.code == 48:  # NamespaceExists
                         break
-                    elif attempt < 2:
+                    elif attempt < 4:
                         time.sleep(0.1 + random.random() * 0.2)
                         continue
                     else:
@@ -253,7 +255,7 @@ class Sessions:
         session = Sessions.get_db_session(SIMULATION_DB_NAME)
 
         # Collection creation (idempotent)
-        for attempt in range(3):
+        for attempt in range(5):
             try:
                 session.create_collection(
                     SIMULATION_TIME_INTERVAL_COLLECTION_NAME,
@@ -269,7 +271,7 @@ class Sessions:
             except errors.OperationFailure as e:
                 if e.code == 48:  # NamespaceExists
                     break
-                elif attempt < 2:
+                elif attempt < 4:
                     time.sleep(0.1 + random.random() * 0.2)
                     continue
                 else:
@@ -282,6 +284,7 @@ class Sessions:
         collection.create_index("instrument_name")
         collection.create_index("start_et")
         collection.create_index("end_et")
+        collection.create_index("threshold")
 
         return collection
 
@@ -383,7 +386,7 @@ class Sessions:
         return simulation_task_documents
 
     @staticmethod
-    def insert_simulation_intervals(simulation_name: str, intervals_dict: Dict[str, List[Tuple[float, float]]]):
+    def insert_simulation_intervals(simulation_name: str, intervals_dict: Dict[str, List[Tuple[float, float]]], threshold: float):
         """
         Inserts simulation time intervals into MongoDB timeseries collection.
         Each interval is stored as a separate document.
@@ -397,6 +400,7 @@ class Sessions:
             delete_result = collection.delete_many({
                 "simulation_name": simulation_name,
                 "instrument_name": instrument_name,
+                "threshold": threshold,
             })
             logging.info(
                 f"Deleted {delete_result.deleted_count} existing interval documents "
@@ -408,6 +412,7 @@ class Sessions:
                     "simulation_name": simulation_name,
                     "instrument_name": instrument_name,
                     "created_at": now,
+                    "threshold": threshold,
                     "start_et": start_et,
                     "end_et": end_et,
                 })
@@ -417,6 +422,109 @@ class Sessions:
             logging.info(f"Inserted {len(documents)} interval documents into '{collection.name}'.")
         else:
             logging.warning("No intervals to insert.")
+
+    ##########################################################################################
+    #####                               Data Extraction                                  #####
+    ##########################################################################################
+
+
+    @staticmethod
+    def prepare_extraction_collections(instrument_name: str, timeseries: Dict, indices: List[str] = ["et", "meta.simulation_id"]):
+        """
+        Ensures collections exist for probably RDR dataset extraction per instrument
+
+        params:
+        instrument_name (str): The name of the instrument for which collections are created.
+        timeseries (dict): Timeseries configuration for the collection.
+        succesfull_indices (list): List of indices to create for the positive collection.
+        """
+        session = Sessions.get_db_session(EXTRACTOR_DB_NAME)
+        collection_name = f"{instrument_name}"
+
+        def create_timeseries_collection(name):
+            for attempt in range(5):
+                try:
+                    session.create_collection(
+                        name,
+                        timeseries=timeseries,
+                    )
+                    break  # Success
+                except errors.CollectionInvalid:
+                    break  # Collection already exists
+                except errors.OperationFailure as e:
+                    if e.code == 48:  # NamespaceExists
+                        break
+                    elif attempt < 4:
+                        time.sleep(0.5 + random.random())
+                        continue
+                    else:
+                        raise
+
+        create_timeseries_collection(collection_name)
+        collection = session[collection_name]
+
+        # Index creation is idempotent; safe to run always
+        for index in indices:
+            collection.create_index(index)
+
+        return collection
+
+
+
+    #### TODO: Implement after the extraction loop is implemented
+    @staticmethod
+    def prepare_extraction_metadata(extraction_metadata: dict) -> bool:
+        """
+        Checks if a finished extraction metadata record already exists that matches the following fields:
+        If such a document exists, returns True (simulation already computed).
+        Otherwise, inserts the provided metadata and returns False.
+        """
+        session = Sessions.get_db_session(EXTRACTOR_DB_NAME)
+        collection = session[EXTRACTOR_METADATA_COLLECTION]
+        # Query matching:
+        # - "instruments": {"$all": [...], "$size": n} makes sure that the document's instruments array contains
+        #   all the provided elements (regardless of order) and that its length matches exactly.
+        query = {
+            "simulation_name": extraction_metadata["simulation_name"],
+            "start_time": extraction_metadata["start_time"],
+            "end_time": extraction_metadata["end_time"],
+            "filter_name": extraction_metadata["filter_name"],
+            "base_step": extraction_metadata["base_step"],
+            "finished": True,
+            "instruments": {
+                "$all": extraction_metadata["instruments"],
+                "$size": len(extraction_metadata["instruments"]),
+            },
+        }
+        existing = collection.find_one(query)
+        if existing:
+            return True
+        else:
+            collection.insert_one(extraction_metadata)
+            return False
+
+    @staticmethod
+    def start_background_update_extraction_metadata(metadata_id, current_time_datetime, finished=None, metadata=None):
+        """
+        Spawns a background thread to update the simulation metadata document.
+        """
+        thread = threading.Thread(
+            target=Sessions.update_simulation_metadata, args=(metadata_id, current_time_datetime, finished, metadata)
+        )
+        thread.daemon = True
+        thread.start()
+        return thread
+
+    @staticmethod
+    def update_extraction_metadata(metadata_id, current_time_datetime, finished=None, metadata=None):
+        update_fields = {"last_logged_time": current_time_datetime}
+        if finished is not None:
+            update_fields["finished"] = finished
+        if metadata is not None:
+            update_fields["metadata"] = metadata
+        session = Sessions.get_db_session(SIMULATION_DB_NAME)
+        session[SIMULATION_METADATA_COLLECTION].update_one({"_id": metadata_id}, {"$set": update_fields})
+
 
     ##########################################################################################
     #####                               Background Tasks                                 #####

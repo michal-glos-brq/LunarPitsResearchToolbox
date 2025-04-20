@@ -21,3 +21,5 @@ SUPRESS_TQDM = bool(os.environ.get("SUPRESS_TQDM", False))
 # Max precision of stropy time
 SPICE_DECIMAL_PRECISION = 9
 Time.precision = SPICE_DECIMAL_PRECISION
+
+MASTER_IP = os.getenv("MASTER_IP", "host.docker.internal")

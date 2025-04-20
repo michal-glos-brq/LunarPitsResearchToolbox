@@ -61,8 +61,11 @@ from abc import ABC
 from typing import List, Literal
 from collections import OrderedDict
 
+import spiceypy as spice
 from astropy.time import Time
 
+
+from src.global_config import SPICE_DECIMAL_PRECISION
 from src.SPICE.config import (
     TIF_SAMPLE_RATE,
     SPICE_PERSIST,
@@ -126,6 +129,13 @@ class BaseKernelManager(ABC):
         )
         self.dynamic_kernels = []
 
+    @property
+    def dsk(self, index=0):
+        if self.static_kernels["dsk"] and index < len(self.static_kernels["dsk"]):
+            return self.static_kernels["dsk"][index]
+        return None
+    
+
     def unload_all(self):
         for static_kernel in self.static_kernels.values():
             for kernel in static_kernel:
@@ -147,6 +157,9 @@ class BaseKernelManager(ABC):
 
     def step(self, time: Time):
         return all([kernel.reload_kernels(time) for kernel in self.dynamic_kernels])
+
+    def step_et(self, et: float):
+        return self.step(Time(spice.et2utc(et, "ISOC", SPICE_DECIMAL_PRECISION), format="isot", scale="utc"))
 
     def activate(self, activation_time: Time = None) -> None:
         """

@@ -52,20 +52,9 @@ dtypes = {
     "sunlat": "float32",
     "sunlon": "float32",
     "sclk": "float64",  # Spacecraft clock - precise float
-    "sclat": "float32",
-    "sclon": "float32",
-    "scrad": "float32",  # Distance from Moon center
-    "scalt": "float32",  # Spacecraft altitude
-    "el_cmd": "float16",  # Elevation command
-    "az_cmd": "float16",  # Azimuth command
     "af": "int16",  # Activity Flag
-    "orientlat": "float32",
-    "orientlon": "float32",
     "c": "int8",  # Diviner Channel Number (1-9)
     "det": "int8",  # Detector Number (1-21)
-    "vlookx": "float32",
-    "vlooky": "float32",
-    "vlookz": "float32",
     "radiance": "float32",  # Radiance (W/m²/sr)
     "tb": "float32",  # Brightness Temperature (K)
     "clat": "float32",  # Latitude of FOV center

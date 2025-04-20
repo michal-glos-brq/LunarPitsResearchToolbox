@@ -30,5 +30,9 @@ SIMULATION_POINTS_COLLECTION = "simulation_points"
 
 SIMULATION_METADATA_COLLECTION = "simulation_metadata"
 
+EXTRACTOR_DB_NAME = "extractorDB"
+EXTRACTOR_METADATA_COLLECTION = "extractor_metadata"
+
+
 RDR_DIVINER_DB = "rdr_diviner"
 RDR_DIVINER_COLLECTION = "rdr_diviner_filtered"  # Here, surely the querried area have to be added as a suffix

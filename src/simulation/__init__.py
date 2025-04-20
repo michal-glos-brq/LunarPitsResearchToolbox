@@ -1,4 +1,4 @@
-from src.simulation.filters import PointFilter, AreaFilter
+from SPICE.filters import PointFilter, AreaFilter
 
 FILTER_MAP = {
     "point": PointFilter,

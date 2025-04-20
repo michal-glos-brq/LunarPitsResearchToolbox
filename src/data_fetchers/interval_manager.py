@@ -1,14 +1,21 @@
 import heapq
+import logging
+from bisect import bisect_right
 from dataclasses import dataclass
-from typing import List, Dict, Optional, Tuple, Iterator, Union
+from functools import total_ordering
+from typing import List, Dict, Optional, Tuple, Union
 
-from astropy.time import Time, TimeDelta
-
+from astropy.time import Time
 import spiceypy as spice
 
+from src.SPICE.utils import et2astropy_time
 from src.global_config import SPICE_DECIMAL_PRECISION
 
 
+logger = logging.getLogger(__name__)
+
+
+@total_ordering
 @dataclass
 class TimeInterval:
     start_et: float  # Ephemeris time (seconds past J2000)
@@ -16,11 +23,11 @@ class TimeInterval:
 
     @property
     def start_astropy_time(self) -> Time:
-        return Time(spice.et2utc(self.start_et, 'ISOC', SPICE_DECIMAL_PRECISION), format='isot', scale='utc')
+        return et2astropy_time(self.start_et)
 
     @property
     def end_astropy_time(self) -> Time:
-        return Time(spice.et2utc(self.end_et, 'ISOC', SPICE_DECIMAL_PRECISION), format='isot', scale='utc')
+        return et2astropy_time(self.end_et)
 
     def __post_init__(self):
         if self.start_et >= self.end_et:
@@ -32,26 +39,67 @@ class TimeInterval:
         if self.end_et - self.start_et > 1e9:
             raise ValueError("Interval is too large. Please check the values.")
 
+    def __contains__(self, other: object) -> bool:
+        if isinstance(other, float):
+            return self.start_et <= other < self.end_et
+        elif isinstance(other, Time):
+            return self.start_et <= spice.utc2et(other.iso) < self.end_et
+        elif isinstance(other, TimeInterval):
+            return self.start_et <= other.start_et and self.end_et >= other.end_et
+        return NotImplemented
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, TimeInterval):
+            return (self.start_et, self.end_et) == (other.start_et, other.end_et)
+        return NotImplemented
+
+    def __lt__(self, other: "TimeInterval") -> bool:
+        if self.start_et < other.start_et:
+            return True
+        elif self.start_et == other.start_et:
+            return self.end_et < other.end_et
+        else:
+            return False
+
     def is_interval_after(self, other: "TimeInterval") -> bool:
-        """
-        Check if the interval is after another interval.
-        """
+        """Check if the whole interval (self) is after another (other) interval."""
         return self.start_et > other.end_et
 
-    def contains(self, et: float) -> bool:
-        return self.start_et <= et < self.end_et
-
-    def containes_time(self, time: Time) -> bool:
-        return self.start_et <= spice.utc2et(time.utc.iso) < self.end_et
+    def is_interval_before(self, other: "TimeInterval") -> bool:
+        """Check if the whole interval (self) is before another (other) interval."""
+        return self.end_et < other.start_et
 
     def overlaps(self, other: "TimeInterval") -> bool:
-        return self.start_et < other.end_et and self.end_et > other.start_et
+        return not (self.end_et < other.start_et or other.end_et < self.start_et)
 
-    def is_subinterval(self, other: "TimeInterval") -> bool:
-        return self.start_et >= other.start_et and self.end_et <= other.end_et
+    def __repr__(self) -> str:
+        return f"TimeInterval({self.start_et}, {self.end_et})"
+
+    def __and__(self, other: "TimeInterval") -> "TimeInterval":
+        if not self.overlaps(other):
+            return None
+        return TimeInterval(max(self.start_et, other.start_et), min(self.end_et, other.end_et))
+
+    def __or__(self, other: "TimeInterval") -> "TimeInterval":
+        if not self.overlaps(other):
+            return None
+        return TimeInterval(min(self.start_et, other.start_et), max(self.end_et, other.end_et))
 
 
 class IntervalList:
+
+    def __init__(self, intervals: Union[List[TimeInterval], List[Tuple[float, float]]]):
+        if not intervals:
+            raise ValueError("Intervals list cannot be empty.")
+
+        self.intervals = (
+            intervals
+            if isinstance(intervals[0], TimeInterval)
+            else [TimeInterval(start_et, end_et) for start_et, end_et in intervals]
+        )
+        self.intervals.sort()
+        # precompute sorted end times for bisect
+        self._ends = [iv.end_et for iv in self.intervals]
 
     @property
     def start_et(self) -> float:
@@ -69,65 +117,43 @@ class IntervalList:
     def end_astropy_time(self) -> Time:
         return self.intervals[-1].end_astropy_time
 
-    def __init__(self, intervals: Union[List[TimeInterval], List[Tuple[float, float]]]):
-        if not intervals:
-            raise ValueError("Intervals list cannot be empty.")
-        if isinstance(intervals[0], TimeInterval):
-            self.intervals = intervals
-        else:
-            self.intervals = [TimeInterval(start_et, end_et) for start_et, end_et in intervals]
-        self.intervals.sort(key=lambda x: x.start_et)
-        # Linear access optimization: skips intervals before current query window
-        self.linear_access_index = 0
-
-
-
-    def get_intervals_intersection(self, interval: TimeInterval, linear_access=True) -> List[TimeInterval]:
+    def get_intervals_intersection(self, target: TimeInterval) -> List[TimeInterval]:
         """
-        Logical and on self.intervals and interval from parameters (Retuers subset of self.intervals, does not edit them,
-        so it's not strict and, but includes only whole intervals from self.intervals).
+        Return all intervals in self.intervals that overlap `target`.
+        Runs in O(log n + k) time where k is number of overlaps.
+        """
+        # find first interval whose end > target.start_et
+        i = bisect_right(self._ends, target.start_et)
+        results = []
+        for iv in self.intervals[i:]:
+            if iv.start_et >= target.end_et:
+                break
+            # by construction iv.end_et > target.start_et and iv.start_et < target.end_et 
+            results.append(iv)
+        return results
 
-        For some level of optimization, we can pass argument to assume linear access and when going
-        for interval intersection, we start from the start of last intersection passed as parameter (or 0).
+    def intersection_mask(self, other: "IntervalList") -> List[bool]:
         """
-        if not linear_access:
-            return [iv for iv in self.intervals if iv.overlaps(interval)]
-        # linear scan
-        while (
-            self.linear_access_index < len(self.intervals)
-            and self.intervals[self.linear_access_index].end_et < interval.start_et
-        ):
-            self.linear_access_index += 1
-        result: List[TimeInterval] = []
-        idx = self.linear_access_index
-        while idx < len(self.intervals) and self.intervals[idx].start_et < interval.end_et:
-            if self.intervals[idx].overlaps(interval):
-                result.append(self.intervals[idx])
-            idx += 1
-        self.linear_access_index = idx
-        return result
+        For each interval in self.intervals, True if it overlaps ANY in `other`.
+        """
+        # ensure other's ends array is up-to-date
+        other_ends = [iv.end_et for iv in other.intervals]
 
-    def intersection_mask(self, other: "IntervalList", linear_access: bool = True) -> List[bool]:
-        """
-        For each interval in this list, return a boolean indicating
-        whether it overlaps any interval in `other`.
-        """
-        mask: List[bool] = []
-        if linear_access:
-            other.reset_linear_access()
+        mask = []
         for iv in self.intervals:
-            if linear_access:
-                overlaps = other.get_intervals_intersection(iv, linear_access=True)
-            else:
-                overlaps = other.get_intervals_intersection(iv, linear_access=False)
-            mask.append(bool(overlaps))
+            # find the first other interval that might overlap
+            j = bisect_right(other_ends, iv.start_et)
+            overlap = False
+            for oiv in other.intervals[j:]:
+                if oiv.start_et >= iv.end_et:
+                    break
+                overlap = True
+                break
+            mask.append(overlap)
         return mask
 
-    def reset_linear_access(self):
-        """
-        Reset the linear access index to the beginning.
-        """
-        self.linear_access_index = 0
+    def __repr__(self) -> str:
+        return f"IntervalList({self.intervals})"
 
 
 class MultiIntervalQueue:
@@ -137,18 +163,16 @@ class MultiIntervalQueue:
     """
 
     def __init__(self, instrument_intervals: Dict[str, IntervalList]):
-        self.heap = []
-        for instrument, ilist in instrument_intervals.items():
-            for interval in ilist.intervals:
-                # Heap sorted by start_et
-                heapq.heappush(self.heap, (interval.start_et, instrument, interval))
+        self.heap: List[Tuple[TimeInterval, str]] = [
+            (iv, name) for name, ilist in instrument_intervals.items() for iv in ilist.intervals
+        ]
+        heapq.heapify(self.heap)
 
     def next_interval(self) -> Optional[Tuple[str, TimeInterval]]:
-        if self.heap:
-            _, instrument, interval = heapq.heappop(self.heap)
-            return instrument, interval
-        else:
+        if not self.heap:
             return None
+        iv, name = heapq.heappop(self.heap)
+        return name, iv
 
     def __bool__(self) -> bool:
         return bool(self.heap)
@@ -162,10 +186,54 @@ class IntervalManager:
 
     def __init__(self, intervals: Dict[str, list[Tuple[float, float]]]):
         self.intervals: Dict[str, IntervalList] = {
-            instrument_name: IntervalList(intervals)
-            for instrument_name, intervals in intervals.items()
+            instrument_name: IntervalList(intervals) for instrument_name, intervals in intervals.items()
         }
         self.multi_queue = MultiIntervalQueue(self.intervals)
+
+    def split_by_times(self, et_points: List[float]) -> List["IntervalManager"]:
+        """
+        Slice this manager into consecutive sub‐managers at the given ET points.
+
+        - If `et_points` is empty or none of the points fall inside
+          this manager’s global [start, end), returns [self].
+        - Otherwise, returns N+1 managers, where N = number of valid split points:
+            [start, p1), [p1, p2), …, [pN, end).
+
+        Each sub‐manager will only contain the portions of original intervals
+        that lie within its slice.
+
+        Args:
+            et_points: arbitrary list of split‐times (floats). They needn’t be sorted.
+        Returns:
+            List of IntervalManager, in ascending time order.
+        """
+        # 1) compute global bounds
+        global_start, global_end = self.global_time_bounds()
+
+        # 2) keep only points strictly inside (global_start, global_end)
+        pts = sorted({p for p in et_points if global_start < p < global_end})
+        if not pts:
+            return [self]
+
+        # 3) build the full boundary list: [start, p1, p2, …, pN, end]
+        boundaries = [global_start] + pts + [global_end]
+
+        managers: List[IntervalManager] = []
+        for a, b in zip(boundaries, boundaries[1:]):
+            slice_iv = TimeInterval(a, b)
+            sub_intervals: Dict[str, List[Tuple[float, float]]] = {}
+
+            # 4) for each instrument, intersect its intervals with [a,b)
+            for name, ilist in self.intervals.items():
+                # fast O(log n + k) to get overlapping ivs
+                for iv in ilist.get_intervals_intersection(slice_iv):
+                    cut = iv & slice_iv  # guaranteed non‐None here
+                    sub_intervals.setdefault(name, []).append((cut.start_et, cut.end_et))
+
+            # 5) even if an instrument has no coverage, we include it only if any instrument did
+            managers.append(IntervalManager(sub_intervals))
+
+        return managers
 
     def get_interval_by_instrument(self, instrument_name: str) -> Optional[IntervalList]:
         """
@@ -187,6 +255,9 @@ class IntervalManager:
         min_start = min(ilist.start_et for ilist in self.intervals.values())
         max_end = max(ilist.end_et for ilist in self.intervals.values())
         return min_start, max_end
+
+    def __len__(self) -> int:
+        return len(self.multi_queue)
 
     def __bool__(self) -> bool:
         return bool(self.multi_queue)
