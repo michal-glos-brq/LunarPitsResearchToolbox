@@ -75,9 +75,11 @@ class RemoteSensingSimulator:
 
     class InstrumentSimulationState:
         def __init__(self, instrument: BaseInstrument, current_et: float):
+            self.name = instrument.name
             self.success_collections, self.failed_collections = Sessions.prepare_simulation_collections(instrument.name)
             self.positive_sensing_batch: List[Dict] = []
             self.failed_computation_batch: List[Dict] = []
+            # Height is not really height - it is the distance from instrument to boresight projection onto lunar surface
             self.heights = DynamicMaxBuffer(DYNAMIC_MAX_BUFFER_HEIGHT_SIZE)
             self.fov_widths = DynamicMaxBuffer(DYNAMIC_MAX_BUFFER_FOV_WIDTH_SIZE)
             self.heights_counter: int = DYNAMIC_MAX_BUFFER_HEIGHT_SIZE
@@ -103,7 +105,9 @@ class RemoteSensingSimulator:
                 f"{name:^24}",
                 f"✅ {len(self.positive_sensing_batch):>4} | T {self.total_success:<5}".ljust(24),
                 f"❌ {len(self.failed_computation_batch):>4} | T {self.total_failed:<5}".ljust(24),
+                # Distance from instrument to boresight projection - "height"
                 f"📏 Max Height: {self.heights.maximum:>7.2f}".ljust(24),
+                # Basically assumed FOV radisu
                 f"🎯 Max FOV:    {self.fov_widths.maximum:>7.2f}".ljust(24),
             ]
 
@@ -246,7 +250,8 @@ class RemoteSensingSimulator:
                                 "score": score,
                                 "simulation_id": self.simulation_metadata_id,
                                 "satellite_position": spacecraft_position.tolist(),
-                                "distance_margin": rank - self.filter.hard_radius,
+                                "instrument": instrument_state.name,
+                                "distance_margin": rank - instrument_state.fov_widths.maximum,
                                 "height": instrument_state.heights.maximum,
                             },
                         }
