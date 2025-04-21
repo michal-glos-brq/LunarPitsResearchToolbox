@@ -370,7 +370,6 @@ class Sessions:
 
         # Build the query.
         query = {
-            "simulation_name": {"$in": simulation_names},
             "filter_name": filter_name,
             "finished": True,  # Optionally query only finished simulations.
             "instruments": {
@@ -378,6 +377,7 @@ class Sessions:
                 "$size": len(instrument_names),
             },
         }
+        query["simulation_name"] = {"$in": simulation_names} if len(simulation_names) != 1 else simulation_names[0]
 
         # Execute the query and sort the results by the 'start_time' field (ascending order).
         cursor = collection.find(query).sort("start_time", 1)

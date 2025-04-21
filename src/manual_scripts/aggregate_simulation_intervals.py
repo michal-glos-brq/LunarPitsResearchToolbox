@@ -167,6 +167,6 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    sim_names = [name.strip() for name in args.sim_names.split(",")]
+    sim_names = list({name.strip() for name in args.sim_names.split(",")})
     result = aggregate_simulation_intervals(args.config_name, sim_names, threshold=args.threshold)
     Sessions.insert_simulation_intervals(sim_names,  result, args.threshold, args.interval_name)
