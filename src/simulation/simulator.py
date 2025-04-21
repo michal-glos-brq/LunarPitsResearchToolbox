@@ -221,11 +221,11 @@ class RemoteSensingSimulator:
             )
             self.simulation_state.max_speed_counter -= 1
 
-        rank = self.filter.rank_point(spacecraft_position)
+        distance = self.filter.rank_point(spacecraft_position)
 
         for instrument in self.instruments:
             instrument_state = self.instrument_simulation_states[instrument.name]
-            score = rank - (
+            score = distance - (
                 instrument_state.heights.maximum + instrument_state.fov_widths.maximum + self.filter.hard_radius
             )
             if score > 0:
@@ -235,8 +235,8 @@ class RemoteSensingSimulator:
                 projection: ProjectionPoint = instrument.project_boresight(
                     self.simulation_state.current_simulation_timestamp_et
                 )
-                rank = self.filter.rank_point(projection.projection)
-                score = rank - (self.filter.hard_radius + instrument_state.fov_widths.maximum) * TOLERANCE_MARGIN
+                distance = self.filter.rank_point(projection.projection)
+                score = distance - ((self.filter.hard_radius + instrument_state.fov_widths.maximum) * TOLERANCE_MARGIN)
                 if score <= 0:
                     # Use simulation state's current timestamp.
                     datetime_current_timestamp = self.simulation_state.current_simulation_timestamp.to_datetime()
@@ -244,14 +244,14 @@ class RemoteSensingSimulator:
                         {
                             "et": self.simulation_state.current_simulation_timestamp_et,
                             "timestamp_utc": datetime_current_timestamp,
-                            "distance": rank,
+                            "boresight_distance": distance,
+                            "bound_distance": distance - instrument_state.fov_widths.maximum,
                             "boresight": projection.projection.tolist(),
                             "meta": {
                                 "score": score,
                                 "simulation_id": self.simulation_metadata_id,
                                 "satellite_position": spacecraft_position.tolist(),
                                 "instrument": instrument_state.name,
-                                "distance_margin": rank - instrument_state.fov_widths.maximum,
                                 "height": instrument_state.heights.maximum,
                             },
                         }

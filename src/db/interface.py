@@ -196,7 +196,7 @@ class Sessions:
         return session[failed_collection_name]
 
     @staticmethod
-    def prepare_simulation_collections(instrument_name: str, indices: List[str] = ["et", "meta.simulation_id"]):
+    def prepare_simulation_collections(instrument_name: str, indices: List[str] = ["et", "meta.simulation_id", "boresight"]):
         """
         Ensures collections exist to store positive and failed simulation results for the given instrument.
         Returns a tuple: (positive_collection, failed_collection).
