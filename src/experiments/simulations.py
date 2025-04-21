@@ -54,7 +54,9 @@ class BaseSimulationConfig:
 
 
 class LunarPitAtlasMappingLROConfig(BaseSimulationConfig):
-
+    """
+    Run example: ./src/manual_scripts/assign_tasks.py --config-name lunar_pit_atlas_mapping_LRO_simulation --name lunar_pit_run --dry-run --task remote_sensing
+    """
     experiment_name = "lunar_pit_atlas_mapping_LRO_simulation"
 
     instrument_names = [
@@ -88,6 +90,9 @@ class LunarPitAtlasMappingLROConfig(BaseSimulationConfig):
     }
 
 class TestLROShortSimulationConfig(BaseSimulationConfig):
+    """
+    Run example: ./src/manual_scripts/assign_tasks.py --config-name test_lro_short_simulation --name demo_run --dry-run --task remote_sensing
+    """
     experiment_name = "test_lro_short_simulation"
 
     instrument_names = [
@@ -98,8 +103,8 @@ class TestLROShortSimulationConfig(BaseSimulationConfig):
     kernel_manager_type = "LRO"
 
     start_time = Time("2012-07-05T16:50:24.211", format="isot", scale="utc")
-    end_time = Time("2012-07-09T16:50:24.211", format="isot", scale="utc")
-    step_days = 1  # 1 day step -> 4 tasks over 4 days
+    end_time = Time("2012-07-25T16:50:24.211", format="isot", scale="utc")
+    step_days = 1  # 1 day step -> 20 tasks over 20 days
 
     kernel_manager_kwargs = {
         "frame": "MOON_PA_DE440",

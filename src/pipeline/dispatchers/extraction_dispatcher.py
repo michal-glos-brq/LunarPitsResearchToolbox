@@ -9,7 +9,8 @@ from src.experiments.extractions import BaseExtractionConfig
 from src.pipeline.app import run_data_extraction_task
 from src.pipeline.dispatchers.base_dispatcher import BaseTaskRunner
 from src.db.interface import Sessions
-from src.SPICE.kernel_utils.spice_kernels import BaseKernel, root_path
+from src.SPICE.kernel_utils.spice_kernels import BaseKernel
+from src.SPICE.config import root_path
 
 
 class ExtractorTaskRunner(BaseTaskRunner):
@@ -20,11 +21,13 @@ class ExtractorTaskRunner(BaseTaskRunner):
 
     def run(
         self,
-        config: BaseExtractionConfig,
+        config_name: str,
         dry_run: bool = True,
         simulation_name: str = None,
         retry_count: Optional[int] = None,
     ):
+        config = BaseExtractionConfig.get_config_dict(config_name)
+
         start_time = config["start_time"]
         end_time = config["end_time"]
         step = TimeDelta(config["step_days"], format="jd")
@@ -63,8 +66,8 @@ class ExtractorTaskRunner(BaseTaskRunner):
 
             task_kwargs = dict(config["extraction_kwargs"])
 
-            task_kwargs["start_time_iso"] = start_time.iso
-            task_kwargs["end_time_iso"] = end_time.iso
+            task_kwargs["start_time_isot"] = start_time.isot
+            task_kwargs["end_time_isot"] = end_time.isot
             task_kwargs["time_interval_manager_json"] = _interval_manager.to_json()
 
             task_kwargs["simulation_name"] = simulation_name

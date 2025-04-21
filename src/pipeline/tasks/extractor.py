@@ -40,8 +40,8 @@ INSTRUMENT_MAP: Dict[str, type] = {
 # @shared_task(bind=True, name="run_data_extraction")
 def run_data_extraction(
     self,
-    start_time_iso: str,  # Obtained - Time.iso
-    end_time_iso: str,
+    start_time_isot: str,  # Obtained - Time.iso
+    end_time_isot: str,
     instrument_names: List[str],
     kernel_manager_type: str,
     filter_type: str,
@@ -57,15 +57,15 @@ def run_data_extraction(
     Returns a summary dict with 'status' and number of chunks processed.
     """
     logger.info(
-        f"Received args: start_time_cxcsec={start_time_iso}, end_time_cxcsec={end_time_iso}, "
+        f"Received args: start_time_isot={start_time_isot}, end_time_isot={end_time_isot}, "
         f"instrument_names={instrument_names}, kernel_manager_type={kernel_manager_type}, "
         f"kernel_manager_kwargs={kernel_manager_kwargs}, filter_kwargs={filter_kwargs}, "
         f"filter_type={filter_type}, simulation_name={simulation_name}"
     )
 
     try:
-        start_time = Time(start_time_iso, format="isot", scale="utc")
-        end_time = Time(end_time_iso, format="isot", scale="utc")
+        start_time = Time(start_time_isot, format="iso", scale="utc")
+        end_time = Time(end_time_isot, format="iso", scale="utc")
     except Exception as e:
         raise ValueError(f"Invalid Time inputs: {e}")
 

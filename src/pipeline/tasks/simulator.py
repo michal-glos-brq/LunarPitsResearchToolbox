@@ -41,8 +41,8 @@ INSTRUMENT_MAP: Dict[str, type] = {
 # @app.task(bind=True)
 def run_remote_sensing_simulation(
     self,
-    start_time_iso: str,
-    end_time_iso: str,
+    start_time_isot: str,
+    end_time_isot: str,
     instrument_names: list[str],
     kernel_manager_type: str,
     filter_type: str,
@@ -56,8 +56,8 @@ def run_remote_sensing_simulation(
     Run a remote sensing simulation with the specified parameters.
 
     Parameters:
-      - start_time_cxcsec (float): Start time (ephemeris time) in seconds.
-      - end_time_cxcsec (float): End time (ephemeris time) in seconds.
+      - start_time_isot (float): Start time (ephemeris time) in seconds.
+      - end_time_isot (float): End time (ephemeris time) in seconds.
       - instrument_names (list[str]): List of instrument names to simulate.
       - kernel_manager_type (str): Type of kernel manager ('LRO' or 'GRAIL').
       - filter_type (str): Filter type ('point' or 'area').
@@ -70,7 +70,7 @@ def run_remote_sensing_simulation(
     """
 
     logger.info(
-        f"Received args: start_time_cxcsec={start_time_iso}, end_time_cxcsec={end_time_iso}, "
+        f"Received args: start_time_isot={start_time_isot}, end_time_isot={end_time_isot}, "
         f"instrument_names={instrument_names}, kernel_manager_type={kernel_manager_type}, "
         f"kernel_manager_kwargs={kernel_manager_kwargs}, filter_kwargs={filter_kwargs}, "
         f"filter_type={filter_type}, simulation_name={simulation_name}, "
@@ -78,9 +78,8 @@ def run_remote_sensing_simulation(
     )
 
     try:
-        # Astropy works for 8 decimal places, hence the 8
-        start_time = Time(start_time_iso, format="isot", scale="utc")
-        end_time = Time(end_time_iso, format="isot", scale="utc")
+        start_time = Time(start_time_isot, format="isot", scale="utc")
+        end_time = Time(end_time_isot, format="isot", scale="utc")
     except Exception as e:
         raise ValueError(f"Invalid time format: {e}")
 
