@@ -1,4 +1,5 @@
 import os
+import logging
 
 from astropy.time import Time
 
@@ -23,3 +24,8 @@ SPICE_DECIMAL_PRECISION = 9
 Time.precision = SPICE_DECIMAL_PRECISION
 
 MASTER_IP = os.getenv("MASTER_IP", "host.docker.internal")
+
+# DEBUG, INFO, WARNING, ERROR, CRITICAL
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+if LOG_LEVEL not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
+    raise ValueError(f"Invalid log level: {LOG_LEVEL}. Must be one of DEBUG, INFO, WARNING, ERROR, CRITICAL.")

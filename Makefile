@@ -5,6 +5,8 @@
 # poetry install
 
 
+export PYTHONPATH := $(shell pwd):$(PYTHONPATH)
+
 scrape-lunar-pit-atlas:
 	@python3 src/manual_scripts/scrape_pit_atlas.py
 

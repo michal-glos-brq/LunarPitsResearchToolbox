@@ -1,22 +1,66 @@
 #!/usr/bin/env python
 """
-This script scrapes the Lunar Pits atlas website and directly converts the scraped data
-into the final Pydantic-validated format before inserting it into MongoDB.
+====================================================
+Lunar Pits Atlas Scraper and Ingestor
+====================================================
+
+Author: Michal Glos
+Institution: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Project: Diploma Thesis – Space Applications
+
+Overview:
+---------
+This script scrapes the Lunar Pits Atlas from the LROC website,
+parses structured tabular and per-pit detail data including images,
+and inserts the cleaned, validated dataset into a MongoDB backend.
+
+The goal is to provide a normalized and extendable database of lunar
+pits, hosting features, diameters, depths, and image metadata,
+which serves as the foundational layer for further thermal and
+remote sensing analysis within the thesis project.
+
+Key Features:
+-------------
+1. **Robust Scraping** – Async scraping with retry logic and error handling.
+2. **Structured Parsing** – Parses both general pit tables and per-pit detail views.
+3. **Image Downloading** – Async download of associated imagery for each pit.
+4. **Schema Validation** – Uses Pydantic models for format enforcement and insertion.
+5. **MongoDB Integration** – Inserts into dedicated collections with automatic mapping.
+
+Collections:
+------------
+• PitsMongoObject            – General info about each pit (name, location, size).
+• PitDetailsMongoObject     – Per-pit detail metadata parsed from detail views.
+• ImageMongoObject          – Downloaded image metadata and local file path.
+
+Notes:
+------
+• Assumes a working MongoDB connection as configured in `Sessions`.
+• Image download path defined in `IMG_BASE_FOLDER`.
+• Intended as a one-time dataset import tool, not a live updater.
 """
+
 
 import os
 import sys
 import asyncio
 import aiohttp
+import time
 from typing import List, Dict
 from bs4 import BeautifulSoup
 import pandas as pd
 import logging
-from tqdm import tqdm
+from tqdm.asyncio import tqdm
 
 from src.db.config import IMG_BASE_FOLDER
 from src.db.interface import Sessions
 from src.db.models.lunar_pit_atlas import PitDetailsMongoObject, PitsMongoObject, ImageMongoObject
+from src.global_config import LOG_LEVEL
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=getattr(logging, LOG_LEVEL), format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
 
 # Constants and configuration.
 PIT_ATLAS_LIST_URL = "https://www.lroc.asu.edu/atlases/pits/list"
@@ -57,46 +101,50 @@ PIT_TABLE_COLUMNS = [
 
 
 async def async_fetch_with_retries(
-    session: aiohttp.ClientSession, url: str, REQUEST_MAX_RETRIES: int = 10, pbar: tqdm = None
+    session: aiohttp.ClientSession, url: str, REQUEST_MAX_RETRIES: int = 10
 ):
+    logger.debug(f"Fetching URL: {url}")
     sleep_time = 10  # Initial delay.
     for _ in range(REQUEST_MAX_RETRIES):
         try:
             async with session.get(url) as response:
+                logger.debug(f"Response status for {url}: {response.status}")
                 if response.status == 200:
                     text = await response.text()
+                    logger.info(f"Successfully fetched {url}")
                     return response, text
+                else:
+                    logger.warning(f"Non-200 status {response.status} for {url}")
         except Exception as e:
-            logging.warning(f"Error fetching {url}: {e}")
-        if pbar:
-            pbar.set_description(f"Retrying {url} in {sleep_time}s")
-        else:
-            print(f"Retrying {url} in {sleep_time} seconds.")
+            logger.warning(f"Error fetching {url}: {e}")
         await asyncio.sleep(sleep_time)
         sleep_time = min(sleep_time * 2, 60)
+    logger.error(f"Failed to fetch {url} after {REQUEST_MAX_RETRIES} attempts")
     return None, None
 
 
-async def async_download_image(session: aiohttp.ClientSession, image_url: str, pbar: tqdm = None):
+async def async_download_image(session: aiohttp.ClientSession, image_url: str):
+    logger.debug(f"Downloading image: {image_url}")
     sleep_time = 10
-    for _ in range(10):  # Fixed retry count.
+    for attempt in range(10):  # Fixed retry count.
         try:
             async with session.get(image_url) as response:
+                logger.debug(f"Image response status for {image_url}: {response.status}")
                 if response.status == 200:
                     content = await response.read()
                     image_name = os.path.basename(image_url)
                     image_path = os.path.join(IMG_BASE_FOLDER, image_name)
                     with open(image_path, "wb") as img_file:
                         img_file.write(content)
+                    logger.info(f"Saved image to {image_path}")
                     return image_path
         except Exception as e:
-            logging.warning(f"Failed to download image {image_url}: {e}")
-        if pbar:
-            pbar.set_description(f"Retrying image {image_url} in {sleep_time}s")
+            logger.warning(f"[Attempt {attempt}] Failed to download {image_url}: {e}")
         else:
             print(f"Retrying image {image_url} in {sleep_time} seconds.")
         await asyncio.sleep(sleep_time)
         sleep_time = min(sleep_time * 2, 60)
+    logger.error(f"Giving up on image {image_url} after 10 attempts")
     return None
 
 
@@ -108,6 +156,7 @@ def parse_table_headers(table):
 def parse_table_rows(table):
     """Extract rows of data from the table."""
     rows = table.find("tbody").find_all("tr")
+    logger.info(f"Found {len(rows)} rows in pits table")
     data = []
     for row in rows:
         cells = row.find_all("td")
@@ -122,6 +171,7 @@ def parse_table_rows(table):
                 cell_data.append(cell.text.strip())
         cell_data.append(object_link)
         data.append(cell_data)
+    logger.debug(f"First row sample: {data[0] if data else 'No data'}")
     return data
 
 
@@ -130,6 +180,7 @@ def parse_details_and_images(divs, row_name: str):
     Parse the detail page to extract details and image info.
     Note: Image URLs will be downloaded asynchronously later.
     """
+    logger.info(f"Parsing details for pit: {row_name}")
     # Parse details table.
     detail_table = divs[0].find("table")
     detail_rows = detail_table.find_all("tr")
@@ -179,54 +230,60 @@ def insert_parsed_records(records: List[Dict], collection, model_class):
             parsed_doc.pop("_id", None)
             parsed_objects.append(parsed_doc)
         except Exception as e:
-            print(f"Error processing record {record.get('name', 'unknown')}: {e}")
+            logger.error(f"Error processing record {record.get('name', 'unknown')}: {e}")
             continue
         pbar.update(1)
+        time.sleep(0.01)
     if parsed_objects:
-        collection.insert_many(parsed_objects, ordered=False)
+        result = collection.insert_many(parsed_objects, ordered=False)
+        logger.info(f"Inserted documents IDs sample: {result.inserted_ids[:3]}")
     pbar.close()
 
 
-async def process_detail_page(row: Dict, session: aiohttp.ClientSession, pbar: tqdm = None):
+async def process_detail_page(row: Dict, session: aiohttp.ClientSession):
     detail_url = f"{PIT_ATLAS_BASE_URL}{row['link_suffix']}"
-    resp, text = await async_fetch_with_retries(session, detail_url, pbar=pbar)
+    resp, text = await async_fetch_with_retries(session, detail_url)
     if not resp:
-        print(f"Failed to fetch details for {row['name']}")
+        logger.error(f"Failed to fetch details for {row['name']}")
         return None, None
     detail_soup = BeautifulSoup(text, "html.parser")
     divs = detail_soup.find_all("div", {"class": "table-responsive"})
     if len(divs) < 2:
-        print(f"Unexpected structure for {row['name']}. Skipping.")
+        logger.warning(f"Unexpected structure for {row['name']}. Skipping.")
         return None, None
     parsed_details, parsed_images = parse_details_and_images(divs, row["name"])
 
     # Download images concurrently using the shared session.
     for image_detail in parsed_images:
         if "image_urls" in image_detail:
-            tasks = [async_download_image(session, url, pbar=pbar) for url in image_detail["image_urls"]]
+            tasks = [async_download_image(session, url) for url in image_detail["image_urls"]]
             downloaded_paths = await asyncio.gather(*tasks)
             # Use first successfully downloaded image.
             image_detail["image_path"] = next((path for path in downloaded_paths if path), None)
+            logger.debug(f"Downloaded image_path for {row['name']}: {image_detail['image_path']}")
             del image_detail["image_urls"]
     return parsed_details, parsed_images
 
 
 async def scrape_and_parse_lunar_pits():
+    logger.info("Starting lunar pits scrape")
     os.makedirs(IMG_BASE_FOLDER, exist_ok=True)
     async with aiohttp.ClientSession() as session:
         # Fetch list page.
         resp, text = await async_fetch_with_retries(session, PIT_ATLAS_LIST_URL)
         if not resp:
-            print("Failed to fetch the list page.")
+            logger.critical("Aborting: failed to fetch list page.")
             sys.exit(1)
         soup = BeautifulSoup(text, "html.parser")
         table = soup.find("table", {"id": "pitsTable"})
         headers = parse_table_headers(table)
         if headers != EXPECTED_PIT_TABLE_COLUMNS:
-            print(f"Unexpected table headers: {headers}")
+            logger.error(f"Unexpected table headers: {headers}")
             raise ValueError("Table headers have changed. Please update the model.")
         rows_data = parse_table_rows(table)
         general_df = pd.DataFrame(rows_data, columns=PIT_TABLE_COLUMNS)
+
+        logger.info(f"Parsed general table into DataFrame with {len(general_df)} rows")
 
         detail_data = []
         image_data = []
@@ -236,7 +293,7 @@ async def scrape_and_parse_lunar_pits():
         )
         # Create async tasks for each detail page, sharing the session.
         for _, row in general_df.iterrows():
-            tasks.append(process_detail_page(row, session, pbar=pbar_details))
+            tasks.append(process_detail_page(row, session))
         results = await asyncio.gather(*tasks)
         for res in results:
             if res is None:
@@ -247,6 +304,7 @@ async def scrape_and_parse_lunar_pits():
             if parsed_images:
                 image_data.extend(parsed_images)
             pbar_details.update(1)
+            time.sleep(0.01)
         pbar_details.close()
 
         # Convert DataFrames.
@@ -256,13 +314,14 @@ async def scrape_and_parse_lunar_pits():
 
         # Insert records into MongoDB.
         PitsCollectionOut, PitDetailsCollectionOut, ImageCollectionOut = Sessions.get_lunar_pit_collections()
-        print("Inserting PITS ...")
+        logger.info("Inserting PITS records")
         insert_parsed_records(general_records, PitsCollectionOut, PitsMongoObject)
-        print("Inserting PIT DETAILS ...")
+        logger.info("Inserting PIT DETAILS records")
         insert_parsed_records(detail_records, PitDetailsCollectionOut, PitDetailsMongoObject)
-        print("Inserting IMAGES ...")
+        logger.info("Inserting IMAGE records")
         insert_parsed_records(image_records, ImageCollectionOut, ImageMongoObject)
-        print("Done.")
+
+    logger.info("Scraping complete.")
 
 
 if __name__ == "__main__":
