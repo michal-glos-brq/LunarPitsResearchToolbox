@@ -96,8 +96,8 @@ class TestLROShortSimulationConfig(BaseSimulationConfig):
     experiment_name = "test_lro_short_simulation"
 
     instrument_names = [
-        "diviner",
-        "lola",
+        "DIVINER",
+        "LOLA",
     ]
 
     kernel_manager_type = "LRO"
