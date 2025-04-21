@@ -57,7 +57,7 @@ def merge_intervals(timestamps: List[float], base_step: float, margin: float = 0
 
 
 def aggregate_simulation_intervals(
-    config_name: str, simulation_name: str, threshold: Optional[float] = None
+    config_name: str, simulation_names: List[str], threshold: Optional[float] = None
 ) -> Dict[str, List[Tuple[float, float]]]:
     """
     Aggregates simulation point timestamps into merged time intervals for each instrument.
@@ -78,7 +78,7 @@ def aggregate_simulation_intervals(
 
     Parameters:
       config_name (str): Name of the simulation configuration to use.
-      simulation_name (str): Simulation name identifier (should match the one used in the metadata).
+      simulation_names (List[str]): Simulation name identifiers (should match the one used in the metadata).
 
     Returns:
       A dict mapping instrument names (str) to lists of (start_et, end_et) tuples.
@@ -95,12 +95,12 @@ def aggregate_simulation_intervals(
     # Query simulation metadata documents. (Assuming this method is implemented accordingly.)
     simulation_tasks = Sessions.simulation_tasks_query(
         filter_name=filter_obj_name,
-        simulation_name=simulation_name,
+        simulation_names=simulation_names,
         instrument_names=instrument_names,
     )
 
     if not simulation_tasks:
-        logger.warning("No simulation metadata documents were found for simulation '%s'.", simulation_name)
+        logger.warning("No simulation metadata documents were found for simulation '%s'.", ",".join(simulation_names))
         return {}
 
     # Sort simulation metadata documents by a time field (e.g., "start_time").
@@ -131,7 +131,7 @@ def aggregate_simulation_intervals(
             # Query the simulation points for this simulation task, sorting by "et" in ascending order. Tiemout to 100 minutes
             query = {"meta.simulation_id": sim_id}
             if threshold is not None:
-                query["meta.distance_margin"] = {"$lte": threshold}
+                query["bound_distance"] = {"$lte": threshold}
             cursor = collection.find(query, {"et": 1}, max_time_ms=6000000).sort("et", 1)
             for doc in cursor:
                 if "et" in doc:
@@ -152,15 +152,21 @@ def aggregate_simulation_intervals(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Merge simulation timestamps into time intervals.")
     parser.add_argument("--config-name", help="Name of the experiment config to use.", required=True)
-    parser.add_argument("--sim-name", help="Name of the simulation run to use.", required=True)
-    parser.add_argument("--interval-name", help="Name of the intervals to save for future extraction.", required=True)
+    parser.add_argument("--sim-names", help="Names of the simulation runs to use, delimited by ','.", required=True)
+    parser.add_argument(
+        "--interval-name",
+        help="Name of the intervals to save for future extraction. This will be referrenced when assigning extraction tasks.",
+        required=True,
+    )
     parser.add_argument(
         "--threshold",
         help="Treshold for additional filtering of data (half FOV widths implicitly added).",
         required=False,
+        type=float,
         default=None,
     )
     args = parser.parse_args()
 
-    result = aggregate_simulation_intervals(args.config_name, args.sim_name, threshold=args.threshold)
-    Sessions.insert_simulation_intervals(args.sim_name, result, args.threshold, args.interval_name)
+    sim_names = [name.strip() for name in args.sim_names.split(",")]
+    result = aggregate_simulation_intervals(args.config_name, sim_names, threshold=args.threshold)
+    Sessions.insert_simulation_intervals(sim_names,  result, args.threshold, args.interval_name)

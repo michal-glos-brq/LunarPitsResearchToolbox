@@ -62,7 +62,7 @@ class DataFetchingEngine:
             end_time: Time = None,
             current_task: Optional[Task] = None,
             interactive_progress: bool = True,
-            simulation_name: Optional[str] = None,
+            extraction_name: Optional[str] = None,
             supress_error_logs: bool = False,
             task_group_id: Optional[str] = None,
             retry_count: Optional[int] = None,
@@ -76,8 +76,8 @@ class DataFetchingEngine:
             self.interval_manager = interval_manager
             self.supress_error_logs = supress_error_logs
             self.interactive_progress = interactive_progress
-            self._simulation_name = simulation_name
-            self.simulation_name = f"{simulation_name}_{retry_count}"
+            self._extraction_name = extraction_name
+            self.extraction_name = f"{extraction_name}_{retry_count}"
 
     def __init__(self, instruments: List[BaseInstrument], filter_object: BaseFilter, kernel_manager: BaseKernelManager):
         self.extraction_state = self.ExtractionState(kernel_manager, instruments, filter_object)
@@ -107,8 +107,8 @@ class DataFetchingEngine:
         """Returns True when task already computed"""
         simulation_metadata = {
             "_id": self.extraction_state.simulation_metadata_id,  # Explicit ID
-            "simulation_name": self.extraction_state._simulation_name,
-            "simulation_attempt_name": self.extraction_state.simulation_name,
+            "extraction_name": self.extraction_state._extraction_name,
+            "extraction_attempt_name": self.extraction_state.extraction_name,
             "task_group_id": self.extraction_state.task_group_id,
             "start_time": self.extraction_state.start_time.utc.iso,
             "end_time": self.extraction_state.end_time.utc.iso,
@@ -182,7 +182,7 @@ class DataFetchingEngine:
         end_time: Time = None,
         current_task: Optional[Task] = None,
         interactive_progress: bool = True,
-        simulation_name: Optional[str] = None,
+        extraction_name: Optional[str] = None,
         supress_error_logs: bool = False,
         task_group_id: Optional[str] = None,
         retry_count: Optional[int] = None,
@@ -196,7 +196,7 @@ class DataFetchingEngine:
             end_time,
             current_task,
             interactive_progress,
-            simulation_name,
+            extraction_name,
             supress_error_logs,
             task_group_id,
             retry_count,
@@ -241,6 +241,13 @@ class DataFetchingEngine:
 
                     new_data = self.data_connectors[instrument_name].read_interval(interval)
                     if new_data:
+                        # Enhancing metadata for tracebility
+                        for dato in new_data:
+                            dato["meta"] = {
+                                "_extraction_name": self.extraction_state._extraction_name,
+                                "extraction_name": self.extraction_state.extraction_name,
+                                "task_group_id": self.extraction_state.task_group_id,
+                            }
                         self.instrument_states[instrument_name].data.extend(new_data)
                         self.instrument_states[instrument_name].total_data += len(new_data)
 

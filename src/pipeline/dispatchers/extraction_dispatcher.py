@@ -23,7 +23,7 @@ class ExtractorTaskRunner(BaseTaskRunner):
         self,
         config_name: str,
         dry_run: bool = True,
-        simulation_name: str = None,
+        name: str = None,
         retry_count: Optional[int] = None,
     ):
         config = BaseExtractionConfig.get_config_dict(config_name)
@@ -52,15 +52,19 @@ class ExtractorTaskRunner(BaseTaskRunner):
         et_list = [spice.utc2et(t.iso) for t in time_list]
 
         logging.info("Obtaining intervals from the DB ...")
-        intervals = Sessions.get_simulation_intervals(simulation_name, config.instrument_names, config.interval_name)
+        intervals = Sessions.get_simulation_intervals(config.instrument_names, config.interval_name)
 
         logging.info("Initializing interval managers ...")
         interval_manager = IntervalManager(intervals)
         interval_managers = interval_manager.split_by_times(et_list)
 
-        logging.info(f"Submitting tasks for extraction: {config.experiment_name}; run {simulation_name}; intervals: {config.interval_name}")
+        logging.info(
+            f"Submitting tasks for extraction: {config.experiment_name}; run {name}; intervals: {config.interval_name}"
+        )
 
-        assert len(interval_managers) == len(et_list) - 1, f"Expected {len(et_list) - 1} interval managers but got {len(interval_managers)}"
+        assert (
+            len(interval_managers) == len(et_list) - 1
+        ), f"Expected {len(et_list) - 1} interval managers but got {len(interval_managers)}"
 
         for _interval_manager, (start_time, end_time) in zip(interval_managers, zip(et_list[:-1], et_list[1:])):
 
@@ -70,7 +74,7 @@ class ExtractorTaskRunner(BaseTaskRunner):
             task_kwargs["end_time_isot"] = end_time.isot
             task_kwargs["time_interval_manager_json"] = _interval_manager.to_json()
 
-            task_kwargs["simulation_name"] = simulation_name
+            task_kwargs["extraction_name"] = name
             task_kwargs["retry_count"] = retry_count
 
             if not dry_run:

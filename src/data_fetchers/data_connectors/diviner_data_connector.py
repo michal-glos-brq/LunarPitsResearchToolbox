@@ -98,6 +98,27 @@ class DivinerDataConnector(BaseDataConnector):
 
     name = "DivinerRDR"
 
+    timeseries = {
+        "timeField": "et",
+        "metaField": "meta",
+        "granularity": "seconds",
+    }
+
+    indices = [
+        "et",  # always index your time field
+        "orbit",  # if you ever query by orbit
+        "c",  # channel
+        "det",  # detector
+        "cloctime",  # Local time (helps with diurnal effects)
+        "csunazi",  # Solar azimuth
+        "csunzen",  # Solar zenith
+        "cemis",  # Emission angle
+        "cx_projected", # Projected coordinates
+        "cy_projected",
+        "cz_projected",
+        "meta._simulation_name",  # if you ever query by simulation name
+    ]
+
     def discover_year_urls(self, min_time: Time, max_time: Time) -> Dict[Tuple[int, int], str]:
         """
         Discover the URLs of the years that are in the given time intervals.
@@ -275,7 +296,9 @@ class DivinerDataConnector(BaseDataConnector):
             .pixels[data_entry["det"]]
             .transformed_boresight(instrument.frame, et)
         )
-        projection = instrument.project_vector(et, projection_vector)
+        from src.simulation.simulator import Projection
+
+        projection: Projection = instrument.project_vector(et, projection_vector)
         if filter_obj.point_pass(projection.projection):
             data_entry.update(projection.to_data())
             return data_entry

@@ -60,7 +60,8 @@ class DIVINERTestExtractorConfig(BaseExtractionConfig):
     instrument_names = [
         "DIVINER",
     ]
-
+    # Here we 100 % define the time intervals for data fetching
+    interval_name = "test_lunar_pit_run"
     kernel_manager_type = "LRO"
 
     start_time = Time("2009-07-05T16:50:24.211", format="isot", scale="utc")
@@ -78,7 +79,7 @@ class DIVINERTestExtractorConfig(BaseExtractionConfig):
     }
 
     filter_type = "point"
-    # This is used for simulation, not necessirily very exclusive
     filter_kwargs = {
-        "hard_radius": 35,
+        "hard_radius": 5, # Km
     }
+
