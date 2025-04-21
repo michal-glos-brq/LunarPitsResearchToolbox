@@ -38,15 +38,15 @@ class ExtractorTaskRunner(BaseTaskRunner):
         task_counter = 0
 
         logging.info(f"Splitting time into task chunks ...")
-        et_list = [spice.utc2et(current_time.iso)]
-        time_list = [current_time]
+
+        time_list = []
+        current_time = start_time
         while current_time < end_time:
-            next_time = current_time + step
-            et_list.append(spice.utc2et(next_time.iso))
-            time_list.append(next_time)
-            current_time = next_time
-        et_list.append(spice.utc2et(end_time.iso))
-        time_list.append(end_time)
+            time_list.append(current_time)
+            current_time += step
+        time_list.append(end_time)  # Ensure inclusive end
+
+        et_list = [spice.utc2et(t.iso) for t in time_list]
 
         logging.info("Obtaining intervals from the DB ...")
         intervals = Sessions.get_simulation_intervals(simulation_name, config.instrument_names, config.interval_name)
@@ -57,14 +57,14 @@ class ExtractorTaskRunner(BaseTaskRunner):
 
         logging.info(f"Submitting tasks for extraction: {config.experiment_name}; run {simulation_name}; intervals: {config.interval_name}")
 
-        assert len(interval_managers) == len(et_list) - 1, f"Expected {len(et_list) - 1} intervals
+        assert len(interval_managers) == len(et_list) - 1, f"Expected {len(et_list) - 1} interval managers but got {len(interval_managers)}"
 
         for _interval_manager, (start_time, end_time) in zip(interval_managers, zip(et_list[:-1], et_list[1:])):
 
             task_kwargs = dict(config["extraction_kwargs"])
 
-            task_kwargs["start_time_iso"] = current_time.iso
-            task_kwargs["end_time_iso"] = next_time.iso
+            task_kwargs["start_time_iso"] = start_time.iso
+            task_kwargs["end_time_iso"] = end_time.iso
             task_kwargs["time_interval_manager_json"] = _interval_manager.to_json()
 
             task_kwargs["simulation_name"] = simulation_name
@@ -72,11 +72,10 @@ class ExtractorTaskRunner(BaseTaskRunner):
 
             if not dry_run:
                 result = run_data_extraction_task.delay(**task_kwargs)
-                logging.info(f"  Task {task_counter}: {current_time.iso} → {next_time.iso} | Task ID: {result.id}")
+                logging.info(f"  Task {task_counter}: {start_time.iso} → {end_time.iso} | Task ID: {result.id}")
             else:
-                logging.info(f"  Task {task_counter}: {current_time.iso} → {next_time.iso} | (Dry run)")
+                logging.info(f"  Task {task_counter}: {start_time.iso} → {end_time.iso} | (Dry run)")
 
-            current_time = next_time
             task_counter += 1
 
         logging.info(f"Submitted {task_counter} tasks successfully.")
