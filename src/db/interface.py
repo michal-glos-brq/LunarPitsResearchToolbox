@@ -196,7 +196,7 @@ class Sessions:
         return session[failed_collection_name]
 
     @staticmethod
-    def prepare_simulation_collections(instrument_name: str, indices: List[str] = ["et", "meta.simulation_id", "boresight"]):
+    def prepare_simulation_collections(instrument_name: str, indices: List[str] = ["et", "meta.simulation_id", "bound_distance"]):
         """
         Ensures collections exist to store positive and failed simulation results for the given instrument.
         Returns a tuple: (positive_collection, failed_collection).
@@ -611,6 +611,7 @@ class Sessions:
                 collection.insert_many(results, ordered=False)  # Insert in bulk, unordered (faster)
                 return  # Success, exit function
             except errors.PyMongoError as e:
+                logging.warning("Batch insert failed: %s", e)
                 if attempt >= MAX_MONGO_RETRIES - 1:
                     logging.error("Batch insert failed permanently: %s", e)
                     Sessions.failed_inserts.put((results, collection))
