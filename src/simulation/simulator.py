@@ -15,9 +15,10 @@ from threading import Thread
 
 from src.SPICE.utils import SPICELog
 from src.SPICE.kernel_utils.kernel_management import BaseKernelManager
-from src.SPICE.instruments.instrument import BaseInstrument, ProjectionPoint
+from src.SPICE.instruments.instrument import BaseInstrument
+from src.structures import ProjectionPoint
 from src.db.interface import Sessions
-from src.SPICE.filters import BaseFilter
+from src.filters import BaseFilter
 from src.simulation.config import (
     SIMULATION_STEP,
     DYNAMIC_MAX_BUFFER_FOV_WIDTH_SIZE,
@@ -31,37 +32,7 @@ from src.simulation.config import (
     SIM_STATE_DUMP_INTERVAL,
 )
 from src.global_config import SUPRESS_TQDM, TQDM_NCOLS
-
-
-
-class DynamicMaxBuffer:
-    """
-    This class creates a dynamic, buffered maximum value.
-    """
-
-    def __init__(self, buffer_size: int):
-        self.buffer_size = buffer_size
-        self.buffer = np.zeros(buffer_size)
-        self.index = 0
-        self.maximum = float("-inf")
-        self.maximum_ttl = buffer_size
-
-    def add(self, value: float):
-        self.buffer[self.index] = value
-        if value >= self.maximum:
-            # New max found – reset TTL
-            self.maximum = value
-            self.maximum_ttl = self.buffer_size
-        else:
-            # Not the new max – decrease TTL
-            self.maximum_ttl -= 1
-            if self.maximum_ttl == 0:
-                # TTL expired – recompute max and reset TTL
-                self.maximum = self.buffer.max()
-                max_pos = np.argmax(self.buffer)
-                distance = (max_pos - self.index) % self.buffer_size
-                self.maximum_ttl = distance if distance != 0 else self.buffer_size
-        self.index = (self.index + 1) % self.buffer_size
+from src.structures import DynamicMaxBuffer
 
 
 class RemoteSensingSimulator:

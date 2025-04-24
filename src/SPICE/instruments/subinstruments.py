@@ -92,7 +92,7 @@ class DivinerSubInstrument(SubInstrument):
     """
 
     # TODO: Doublecheck the B orientation - direction of pixels change with different data sources
-    # It is in RDR SIS document for DIVINER
+    # It is in RDR SIS document for DIVINER ### Now should be correct, but still doublecheck eventually
 
     def __init__(
         self, naif_id: int, _id: int, pixel_key: Literal["INS-85205_DETECTOR_DIRS_FP_A", "INS-85205_DETECTOR_DIRS_FP_B"]
@@ -107,8 +107,11 @@ class DivinerSubInstrument(SubInstrument):
 
         index_start, get_numbers = _id * DIVINER_SUBINSTRUMENT_PIXEL_COUNT * 3, DIVINER_SUBINSTRUMENT_PIXEL_COUNT * 3
         pixel_boresights = np.array(spice.gdpool(pixel_key, index_start, get_numbers)).reshape((21, 3))
+        if pixel_key[-1] == "B":
+            pixel_boresights = pixel_boresights[::-1, :]
         self.pixels = [
-            ImplicitSubInstrument(f"{_id}_{i}{pixel_key[-1]}", self.sub_instrument_frame, boresight=boresight)
+            # Name is index + 1, because they are indexed from 1 in docs
+            ImplicitSubInstrument(f"{_id+1}_{i+1}{pixel_key[-1]}", self.sub_instrument_frame, boresight=boresight)
             for i, boresight in enumerate(pixel_boresights)
         ]
 

@@ -1,22 +1,16 @@
 import logging
 import requests
-from typing import List, Dict, Optional, Callable
+from typing import List, Dict, Optional
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 
-from astropy.time import Time
 from concurrent.futures import ThreadPoolExecutor, Future
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-import pandas as pd
-from bs4 import BeautifulSoup as bs
-from urllib.parse import urljoin
-from cachetools import LRUCache
 
 from src.SPICE.instruments.instrument import BaseInstrument
-from src.SPICE.filters import BaseFilter
-from src.data_fetchers.data_connectors.virtual_file import VirtualFile
-from src.data_fetchers.interval_manager import IntervalList, TimeInterval
+from src.filters import BaseFilter
+from src.structures import VirtualFile
+from src.structures import IntervalList, TimeInterval
 from src.SPICE.kernel_utils.kernel_management import BaseKernelManager
 
 logger = logging.getLogger(__name__)

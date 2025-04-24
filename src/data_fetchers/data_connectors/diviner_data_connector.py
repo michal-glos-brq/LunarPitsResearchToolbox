@@ -5,7 +5,6 @@ do not want to risk data loss by omission, assign the tasks with times in the mi
 
 import zipfile
 import pvl
-from pvl.decoder import PVLDecoder
 import io
 import logging
 from pprint import pformat
@@ -17,27 +16,22 @@ from urllib.parse import urlparse, urljoin
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-from cachetools import LRUCache
 from bs4 import BeautifulSoup as bs
 import spiceypy as spice
 from astropy.time import Time
 
-from src.data_fetchers.data_connectors.virtual_file import VirtualFile
-from src.data_fetchers.interval_manager import TimeInterval, IntervalList
+from src.structures import VirtualFile
+from src.structures import TimeInterval, IntervalList
 from src.data_fetchers.data_connectors.base_data_connector import BaseDataConnector
 from src.SPICE.config import LRO_INT_ID
+from src.SPICE.utils import NoDatetimeDecoder
 from src.global_config import SUPRESS_TQDM
-from src.SPICE.filters import BaseFilter
+from src.filters import BaseFilter
 from src.SPICE.instruments.instrument import BaseInstrument
+from src.structures import ProjectionPoint
 
 
-class NoDatetimeDecoder(PVLDecoder):
-    def decode_datetime(self, value):
-        return spice.utc2et(value)
-
-
-# logger = logging.getLogger(__name__)
-logger = logging.getLogger("kokos")
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 ### Eventually check the website for updates, dynamic parsing is overkill in this instance
@@ -91,7 +85,6 @@ dtypes = {
 }
 
 
-spacecraft_position_cache = LRUCache(maxsize=128)
 
 
 class DivinerDataConnector(BaseDataConnector):
@@ -296,9 +289,8 @@ class DivinerDataConnector(BaseDataConnector):
             .pixels[data_entry["det"]]
             .transformed_boresight(instrument.frame, et)
         )
-        from src.simulation.simulator import Projection
 
-        projection: Projection = instrument.project_vector(et, projection_vector)
+        projection: ProjectionPoint = instrument.project_vector(et, projection_vector)
         if filter_obj.point_pass(projection.projection):
             data_entry.update(projection.to_data())
             return data_entry

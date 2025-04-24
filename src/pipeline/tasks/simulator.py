@@ -14,7 +14,7 @@ from src.SPICE.instruments.lro import (
 )
 from src.SPICE.instruments.grail import GrailAInstrument, GrailBInstrument
 from src.simulation.simulator import RemoteSensingSimulator
-from src.SPICE.filters import FILTER_MAP
+from src.filters import FILTER_MAP
 
 
 logger = logging.getLogger(__name__)

@@ -3,11 +3,17 @@ import logging
 from astropy.time import Time
 from tqdm import tqdm
 import spiceypy as spice
+from pvl.decoder import PVLDecoder
 
 from src.global_config import SPICE_DECIMAL_PRECISION
 
 def et2astropy_time(et: float) -> Time:
     return Time(spice.et2utc(et, "ISOC", SPICE_DECIMAL_PRECISION), format="isot", scale="utc")
+
+
+class NoDatetimeDecoder(PVLDecoder):
+    def decode_datetime(self, value):
+        return spice.utc2et(value)
 
 
 class SPICELog:

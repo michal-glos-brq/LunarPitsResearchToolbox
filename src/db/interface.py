@@ -94,7 +94,7 @@ class Sessions:
                         maxPoolSize=20,
                     )
 
-                if hasattr(Sessions.sessions, db_name):
+                if db_name in Sessions.sessions:
                     return Sessions.sessions[db_name]
 
                 if db_name not in Sessions.client.list_database_names():
@@ -408,6 +408,10 @@ class Sessions:
             logging.info(f"Deleted {deleted} old intervals for {instr}")
 
             for start_et, end_et in ivals:
+                if start_et >= end_et:
+                    logging.warning(f"Invalid interval for {instr}: {start_et} >= {end_et}")
+                    continue
+
                 docs.append(
                     {
                         "meta": {

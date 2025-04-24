@@ -9,7 +9,6 @@ from astropy.time import Time
 import spiceypy as spice
 
 from src.SPICE.utils import et2astropy_time
-from src.global_config import SPICE_DECIMAL_PRECISION
 
 
 logger = logging.getLogger(__name__)
@@ -20,6 +19,16 @@ logger = logging.getLogger(__name__)
 class TimeInterval:
     start_et: float  # Ephemeris time (seconds past J2000)
     end_et: float
+
+    def __post_init__(self):
+        if self.start_et >= self.end_et:
+            raise ValueError("start_et must be less than end_et.")
+        # Ensure that the interval is valid
+        if self.start_et < 0 or self.end_et < 0:
+            raise ValueError("Ephemeris time must be non-negative.")
+        # Ensure that the interval is not too large
+        if self.end_et - self.start_et > 1e9:
+            raise ValueError("Interval is too large. Please check the values.")
 
     def to_json(self) -> Dict[str, float]:
         """JSON‑friendly dict."""
@@ -38,15 +47,16 @@ class TimeInterval:
     def end_astropy_time(self) -> Time:
         return et2astropy_time(self.end_et)
 
-    def __post_init__(self):
-        if self.start_et >= self.end_et:
-            raise ValueError("start_et must be less than end_et.")
-        # Ensure that the interval is valid
-        if self.start_et < 0 or self.end_et < 0:
-            raise ValueError("Ephemeris time must be non-negative.")
-        # Ensure that the interval is not too large
-        if self.end_et - self.start_et > 1e9:
-            raise ValueError("Interval is too large. Please check the values.")
+    def is_interval_after(self, other: "TimeInterval") -> bool:
+        """Check if the whole interval (self) is after another (other) interval."""
+        return self.start_et > other.end_et
+
+    def is_interval_before(self, other: "TimeInterval") -> bool:
+        """Check if the whole interval (self) is before another (other) interval."""
+        return self.end_et < other.start_et
+
+    def overlaps(self, other: "TimeInterval") -> bool:
+        return not (self.end_et < other.start_et or other.end_et < self.start_et)
 
     def __contains__(self, other: object) -> bool:
         if isinstance(other, float):
@@ -69,17 +79,6 @@ class TimeInterval:
             return self.end_et < other.end_et
         else:
             return False
-
-    def is_interval_after(self, other: "TimeInterval") -> bool:
-        """Check if the whole interval (self) is after another (other) interval."""
-        return self.start_et > other.end_et
-
-    def is_interval_before(self, other: "TimeInterval") -> bool:
-        """Check if the whole interval (self) is before another (other) interval."""
-        return self.end_et < other.start_et
-
-    def overlaps(self, other: "TimeInterval") -> bool:
-        return not (self.end_et < other.start_et or other.end_et < self.start_et)
 
     def __repr__(self) -> str:
         return f"TimeInterval({self.start_et}, {self.end_et})"
@@ -110,10 +109,6 @@ class IntervalList:
         # precompute sorted end times for bisect
         self._ends = [iv.end_et for iv in self.intervals]
 
-    def to_json(self) -> List[Dict[str, float]]:
-        """List of interval dicts."""
-        return [iv.to_json() for iv in self.intervals]
-
     @classmethod
     def from_json(cls, data: List[Dict[str, Any]]) -> "IntervalList":
         """Reconstruct from to_json output."""
@@ -135,6 +130,10 @@ class IntervalList:
     @property
     def end_astropy_time(self) -> Time:
         return self.intervals[-1].end_astropy_time
+
+    def to_json(self) -> List[Dict[str, float]]:
+        """List of interval dicts."""
+        return [iv.to_json() for iv in self.intervals]
 
     def get_intervals_intersection(self, target: TimeInterval) -> List[TimeInterval]:
         """
@@ -199,6 +198,7 @@ class MultiIntervalQueue:
     def __len__(self) -> int:
         return len(self.heap)
 
+
 class IntervalManager:
     """
     Manages time intervals for the simulation.
@@ -210,6 +210,50 @@ class IntervalManager:
             instrument_name: IntervalList(intervals) for instrument_name, intervals in intervals.items()
         }
         self.multi_queue = MultiIntervalQueue(self.intervals)
+
+    @property
+    def end_ets(self) -> Dict[str, float]:
+        return {name: ilist.end_et for name, ilist in self.intervals.items()}
+
+    @property
+    def start_ets(self) -> Dict[str, float]:
+        return {name: ilist.start_et for name, ilist in self.intervals.items()}
+
+    @property
+    def start_et(self) -> float:
+        """The earliest start time of all intervals."""
+        return min(self.start_ets.values())
+
+    @property
+    def start_astropy_time(self) -> Time:
+        return et2astropy_time(self.start_et)
+
+    @property
+    def start_et_common(self) -> float:
+        """Max of instrument start times - first timestamp covered by all instruments"""
+        return max(self.start_ets.values())
+
+    @property
+    def start_astropy_time_common(self) -> Time:
+        return et2astropy_time(self.start_et_common)
+
+    @property
+    def end_et(self) -> float:
+        """The latest end time of all intervals."""
+        return max(self.end_ets.values())
+
+    @property
+    def end_astropy_time(self) -> Time:
+        return et2astropy_time(self.end_et)
+
+    @property
+    def end_et_common(self) -> float:
+        """Min of instrument end times - last timestamp covered by all instruments"""
+        return min(self.end_ets.values())
+
+    @property
+    def end_astropy_time_common(self) -> Time:
+        return et2astropy_time(self.end_et_common)
 
     def to_json(self) -> Dict[str, List[Dict[str, float]]]:
         """
@@ -226,7 +270,7 @@ class IntervalManager:
         raw = {name: [(d["start_et"], d["end_et"]) for d in lst] for name, lst in data.items()}
         return cls(raw)
 
-    def split_by_times(self, et_points: List[float]) -> List["IntervalManager"]:
+    def split_by_timestamps(self, et_points: List[float]) -> List["IntervalManager"]:
         """
         Slice this manager into consecutive sub‐managers at the given ET points.
 

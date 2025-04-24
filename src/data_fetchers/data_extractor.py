@@ -10,12 +10,12 @@ import spiceypy as spice
 from celery import Task
 
 from src.SPICE.utils import SPICELog
-from src.data_fetchers.interval_manager import IntervalManager
+from src.structures import IntervalManager
 from src.SPICE.instruments.instrument import BaseInstrument
 from src.SPICE.kernel_utils.kernel_management import BaseKernelManager
 from src.data_fetchers.data_connectors.base_data_connector import BaseDataConnector
 from src.data_fetchers.data_connectors.diviner_data_connector import DivinerDataConnector
-from src.SPICE.filters import BaseFilter
+from src.filters import BaseFilter
 from src.db.interface import Sessions
 from src.SPICE.utils import et2astropy_time
 from src.data_fetchers.config import MONGO_UPLOAD_BATCH_SIZE

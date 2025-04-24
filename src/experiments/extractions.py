@@ -78,7 +78,7 @@ class DIVINERTestExtractorConfig(BaseExtractionConfig):
         "keep_dynamic_kernels": True,
     }
 
-    filter_type = "point"
+    filter_type = "lunar_pit"
     filter_kwargs = {
         "hard_radius": 5, # Km
     }

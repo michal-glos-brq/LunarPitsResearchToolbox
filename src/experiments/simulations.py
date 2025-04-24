@@ -55,7 +55,16 @@ class BaseSimulationConfig:
 
 class LunarPitAtlasMappingLROConfig(BaseSimulationConfig):
     """
-    Run example: ./src/manual_scripts/assign_tasks.py --config-name lunar_pit_atlas_mapping_LRO_simulation --name lunar_pit_run --dry-run --task remote_sensing
+    Run example: ./src/manual_scripts/assign_tasks.py \
+                        --config-name lunar_pit_atlas_mapping_LRO_simulation \
+                        --name lunar_pit_run \
+                        --task remote_sensing \
+                        --dry-run 
+    Run to aggregate: ./src/manual_scripts/aggregate_simulation_intervals.py \
+                            --config-name lunar_pit_atlas_mapping_LRO_simulation \
+                            --sim-name lunar_pit_run \
+                            --interval-name test_full_run \
+                            --threshold 5
     """
     experiment_name = "lunar_pit_atlas_mapping_LRO_simulation"
 
@@ -83,7 +92,7 @@ class LunarPitAtlasMappingLROConfig(BaseSimulationConfig):
         "keep_dynamic_kernels": True,
     }
 
-    filter_type = "point"
+    filter_type = "lunar_pit"
     # This is used for simulation, not necessirily very exclusive
     filter_kwargs = {
         "hard_radius": 35,
@@ -116,7 +125,7 @@ class TestLROShortSimulationConfig(BaseSimulationConfig):
         "keep_dynamic_kernels": True,
     }
 
-    filter_type = "point"
+    filter_type = "lunar_pit"
     filter_kwargs = {
         "hard_radius": 35,
     }

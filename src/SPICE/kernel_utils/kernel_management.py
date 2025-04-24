@@ -89,7 +89,6 @@ from src.SPICE.kernel_utils.spice_kernels import (
 from src.SPICE.kernel_utils.detailed_model import DetailedModelDSKKernel
 
 
-
 class BaseKernelManager(ABC):
     """
     This SweepIterator ensures we have correct SPICE files loaded for given datetime
@@ -134,7 +133,6 @@ class BaseKernelManager(ABC):
         if self.static_kernels["dsk"] and index < len(self.static_kernels["dsk"]):
             return self.static_kernels["dsk"][index]
         return None
-    
 
     def unload_all(self):
         for static_kernel in self.static_kernels.values():
@@ -177,15 +175,15 @@ class LunarKernelManagerMixin:
         You can choose the lunar frame with frame and DSK model - more detailed have to be compiled locally
         """
         self.main_reference_frame = frame
-        # Following two kernels are universal and always needed
-        self.static_kernels["bpck"].append(
-            BaseKernel(generic_url("pck/moon_pa_de421_1900-2050.bpc"), root_path("pck/moon_pa_de421_1900-2050.bpc"))
-        )
+
         self.static_kernels["fk"].append(
             BaseKernel(generic_url("fk/satellites/moon_080317.tf"), root_path("fk/moon_080317.tf"))
         )
 
         if frame == "MOON_ME":
+            self.static_kernels["bpck"].append(
+                BaseKernel(generic_url("pck/moon_pa_de421_1900-2050.bpc"), root_path("pck/moon_pa_de421_1900-2050.bpc"))
+            )
             self.static_kernels["fk"] += [
                 BaseKernel(generic_url("fk/satellites/moon_assoc_me.tf"), root_path("fk/moon_assoc_me.tf")),
                 BaseKernel(generic_url("fk/satellites/moon_assoc_pa.tf"), root_path("fk/moon_assoc_pa.tf")),
@@ -220,10 +218,10 @@ class LunarKernelManagerMixin:
 class LROKernelManagerMixin:
     def setup_lro_kernels(
         self,
+        frame: Literal["MOON_ME", "MOON_PA_DE440"] = LUNAR_FRAME,
         pre_download_kernels: bool = True,
         diviner_ck: bool = False,
         lroc_ck: bool = False,
-        lola_ck: bool = False,
         keep_dynamic_kernels: bool = SPICE_PERSIST,
         min_required_time: Time = None,
         max_required_time: Time = None,
@@ -284,18 +282,33 @@ class LROKernelManagerMixin:
                 max_time_to_load=max_required_time,
                 keep_kernels=keep_dynamic_kernels,
             ),
-            # LRO trajectory
-            LBLDynamicKernelLoader(
+        ]
+        if frame == "MOON_ME":
+            # Not so precise data
+            self.dynamic_kernels.append(
+                LBLDynamicKernelLoader(
+                    lro_path("spk"),
+                    lro_url("spk/"),
+                    r"lrorg.*.bsp",
+                    r"lrorg.*.lbl",
+                    pre_download_kernels=pre_download_kernels,
+                    min_time_to_load=min_required_time,
+                    max_time_to_load=max_required_time,
+                    keep_kernels=keep_dynamic_kernels,
+                ),
+            )
+        else:
+            # Much more precise data
+            self.dynamic_kernels.append(LBLDynamicKernelLoader(
                 lro_path("spk"),
-                lro_url("spk/"),
-                r"lrorg.*.bsp",
-                r"lrorg.*.lbl",
+                "https://pds-geosciences.wustl.edu/lro/lro-l-rss-1-tracking-v1/lrors_0001/data/spk/",
+                r"/lro/lro-l-rss-1-tracking-v1/lrors_0001/data/spk/lro_.*grgm900c_l600.*bsp",
+                r"/lro/lro-l-rss-1-tracking-v1/lrors_0001/data/spk/lro_.*grgm900c_l600.*lbl",
                 pre_download_kernels=pre_download_kernels,
                 min_time_to_load=min_required_time,
                 max_time_to_load=max_required_time,
                 keep_kernels=keep_dynamic_kernels,
-            ),
-        ]
+            ))
         if diviner_ck:
             # For now, callbacks serve no actual purpose. Left here in case it would be needed
             # diviner_callback = [ (lambda et: spice.pxform("LRO_DLRE", "LRO_DLRE", et), [0], {}) ]
@@ -397,6 +410,17 @@ class GRAILKernelManagerMixin:
                 ]
             ),
         ]
+
+
+class LeapsecondKernelManager(BaseKernelManager):
+    """
+    Just a simple helper for time translation from astropy.time.Time to ephemeris time
+    Kernel is loaded upon instantialization of this object.
+    """
+
+    def __init__(self, min_required_time: Time = None, max_required_time: Time = None):
+        super().__init__(min_required_time=min_required_time, max_required_time=max_required_time)
+        self.load_static_kernels()
 
 
 class LunarKernelManager(BaseKernelManager, LunarKernelManagerMixin):

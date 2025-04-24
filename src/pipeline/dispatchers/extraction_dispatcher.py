@@ -4,7 +4,7 @@ from typing import Optional
 import spiceypy as spice
 from astropy.time import TimeDelta
 
-from src.data_fetchers.interval_manager import IntervalManager
+from src.structures import IntervalManager
 from src.experiments.extractions import BaseExtractionConfig
 from src.pipeline.app import run_data_extraction_task
 from src.pipeline.dispatchers.base_dispatcher import BaseTaskRunner
@@ -56,7 +56,7 @@ class ExtractorTaskRunner(BaseTaskRunner):
 
         logging.info("Initializing interval managers ...")
         interval_manager = IntervalManager(intervals)
-        interval_managers = interval_manager.split_by_times(et_list)
+        interval_managers = interval_manager.split_by_timestamps(et_list)
 
         logging.info(
             f"Submitting tasks for extraction: {config.experiment_name}; run {name}; intervals: {config.interval_name}"

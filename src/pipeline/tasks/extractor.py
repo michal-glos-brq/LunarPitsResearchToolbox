@@ -7,7 +7,7 @@ from typing import List, Optional, Dict
 from astropy.time import Time, TimeDelta
 
 from src.SPICE.kernel_utils.kernel_management import LROKernelManager, GRAILKernelManager
-from src.SPICE.filters import FILTER_MAP
+from src.filters import FILTER_MAP
 from src.SPICE.instruments.lro import (
     DivinerInstrument,
     LolaInstrument,
@@ -16,7 +16,7 @@ from src.SPICE.instruments.lro import (
     LROCNACInstrument,
 )
 from src.SPICE.instruments.grail import GrailAInstrument, GrailBInstrument
-from src.data_fetchers.interval_manager import IntervalManager
+from src.structures import IntervalManager
 from src.data_fetchers.data_extractor import DataFetchingEngine
 
 logger = logging.getLogger(__name__)

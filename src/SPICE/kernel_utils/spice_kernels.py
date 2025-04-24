@@ -56,7 +56,7 @@ import spiceypy as spice
 from tqdm import tqdm
 from bs4 import BeautifulSoup as bs
 
-from src.SPICE.kernel_utils.locks import SharedFileUseLock
+from structures import SharedFileUseLock
 from filelock import FileLock
 from src.global_config import TQDM_NCOLS, SUPRESS_TQDM
 from src.SPICE.config import (
@@ -595,8 +595,13 @@ class DynamicKernelManager(ABC):
             kernel.ensure_downloaded()
             pbar.update(1)
 
+        try:
+            kernel_type = os.path.basename(os.path.dirname(self.filename))
+        except Exception as e:
+            kernel_type = "SPICE"
+
         pbar = tqdm(
-            total=len(self.kernel_pool), desc="Downloading dynamic kernels", ncols=TQDM_NCOLS, disable=SUPRESS_TQDM
+            total=len(self.kernel_pool), desc=f"Downloading ({kernel_type}) dynamic kernels ", ncols=TQDM_NCOLS, disable=SUPRESS_TQDM
         )
 
         with ThreadPoolExecutor(max_workers=MAX_KERNEL_DOWNLOADS) as executor:
@@ -723,9 +728,9 @@ class LBLDynamicKernelLoader(DynamicKernelManager):
         self.kernel_pool: List[LBLDynamicKernel] = [
             LBLDynamicKernel(
                 kernel_url,
-                os.path.join(self.path, kernel_filename),
+                os.path.join(self.path, os.path.basename(kernel_filename)),
                 metadata_url,
-                os.path.join(self.path, metadata_filename),
+                os.path.join(self.path, os.path.basename(metadata_filename)),
                 keep_kernel=self.keep_kernels,
             )
             for kernel_url, kernel_filename, metadata_url, metadata_filename in zip(

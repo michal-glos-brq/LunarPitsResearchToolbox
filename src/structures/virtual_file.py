@@ -1,14 +1,13 @@
 import requests
 import threading
 import logging
-import random
 import time
 from typing import Optional, Dict
 
 from io import BytesIO
 
 from src.data_fetchers.config import MAX_RETRIES, DOWNLOAD_TIMEOUT, DOWNLOAD_CHUNK_SIZE
-from src.data_fetchers.interval_manager import TimeInterval
+from src.structures import TimeInterval
 
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s")

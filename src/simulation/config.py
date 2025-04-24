@@ -17,7 +17,7 @@ DYNAMIC_MAX_BUFFER_SPACECRAFT_VELOCITY_SIZE = 64
 DYNAMIC_MAX_BUFFER_SPACECRAFT_VELOCITY_UPDATE_RATE = 64
 
 # Batching simulation points for efficient inserts
-MONGO_PUSH_BATCH_SIZE = 256
+MONGO_PUSH_BATCH_SIZE = 4096
 
 # Printing the simulation progress in somehow human friendly way
 # SIM_STATE_DUMP_INTERVAL = 60 * 15  # Each 15 minutes

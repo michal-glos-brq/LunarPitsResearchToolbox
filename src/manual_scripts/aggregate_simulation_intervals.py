@@ -15,13 +15,13 @@ from tqdm import tqdm
 
 from src.db.interface import Sessions
 from src.experiments.simulations import BaseSimulationConfig
-from src.SPICE.filters import FILTER_MAP
+from src.filters import FILTER_MAP
 from src.global_config import TQDM_NCOLS
 
 logger = logging.getLogger(__name__)
 
 
-def merge_intervals(timestamps: List[float], base_step: float, margin: float = 0.1) -> List[Tuple[float, float]]:
+def merge_intervals(timestamps: List[float], base_step: float, margin: float = 0.1, correction: float = 1.6) -> List[Tuple[float, float]]:
     """
     Merge a sorted list of timestamps (ephemeris time as float) into continuous intervals.
 
@@ -31,6 +31,7 @@ def merge_intervals(timestamps: List[float], base_step: float, margin: float = 0
       timestamps (list[float]): A sorted list of timestamps (ET in seconds).
       base_step (float): The base step threshold (in seconds) from the simulation metadata.
       margin (float): Additional tolerance (in seconds).
+      correction (float): Because of sampling, half of the period is added to the interval from both sides (default 1.6 is reasonable for low lunar orbit - inclusive).
 
     Returns:
       List of tuples, where each tuple is (start_et, end_et) representing a merged continuous interval.
@@ -47,12 +48,20 @@ def merge_intervals(timestamps: List[float], base_step: float, margin: float = 0
 
     for t in timestamps[1:]:
         if t - previous > threshold:
-            intervals.append((current_start, previous))
+            intervals.append((current_start - correction, previous + correction))
             current_start = t
         previous = t
 
     # Append last interval.
-    intervals.append((current_start, previous))
+    intervals.append((current_start - correction, previous + correction))
+
+    merged_corrected_interval = [intervals.pop(0)]
+    for start, end in intervals:
+        if start <= merged_corrected_interval[-1][1]:
+            merged_corrected_interval[-1] = (merged_corrected_interval[-1][0], max(merged_corrected_interval[-1][1], end))
+        else:
+            merged_corrected_interval.append((start, end))
+
     return intervals
 
 
