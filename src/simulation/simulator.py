@@ -346,14 +346,6 @@ class RemoteSensingSimulator:
             pbar.update(self.computation_timedelta.sec)
 
         # Flush data to the database.
-        if len(self.simulation_state.spacecraft_position_computation_failed) >= MONGO_PUSH_BATCH_SIZE:
-            thread = Sessions.start_background_batch_insert(
-                self.simulation_state.spacecraft_position_computation_failed,
-                self.simulation_state.spacecraft_position_computation_failed_collection,
-            )
-            self.threads.append(thread)
-            self.simulation_state.spacecraft_position_computation_failed = []
-
         for instrument in self.instruments:
             instrument_state = self.instrument_simulation_states[instrument.name]
             if len(instrument_state.positive_sensing_batch) >= MONGO_PUSH_BATCH_SIZE:
@@ -468,12 +460,6 @@ class RemoteSensingSimulator:
                     self._simulation_step_housekeeping(pbar, interactive_progress, current_task)
 
         # Final flush to the database.
-        if self.simulation_state.spacecraft_position_computation_failed:
-            Sessions.start_background_batch_insert(
-                self.simulation_state.spacecraft_position_computation_failed,
-                self.simulation_state.spacecraft_position_computation_failed_collection,
-            )
-
         for instrument in self.instruments:
             instrument_state = self.instrument_simulation_states[instrument.name]
             if instrument_state.positive_sensing_batch:

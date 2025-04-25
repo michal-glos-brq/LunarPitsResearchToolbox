@@ -171,7 +171,7 @@ class DetailedModelDSKKernel(BaseKernel):
     def latlon_to_cartesian(self, lat: Union[float, np.ndarray], lon: Union[float, np.ndarray]) -> np.ndarray:
         """
         Convert lat/lon to Cartesian (X, Y, Z) coordinates using DSK surface intersection.
-        - lat, lon in degrees (can be float or np.ndarray)
+        - lat, lon in degrees (can be float or np.ndarray) (normalized into 0 mean and 90/180 max/min)
         - returns Nx3 array of Cartesian coordinates in km
         """
         return self.dsk_latlon_to_cartesian(lat, lon, self.filename)
