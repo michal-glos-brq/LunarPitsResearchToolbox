@@ -13,7 +13,6 @@ DOWNLOAD_TIMEOUT = 60 * 60 * 2 # 2 hours
 DOWNLOAD_CHUNK_SIZE = 8 * 1024 # 8 KB
 
 
-logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
 logger = logging.getLogger(__name__)
 
 

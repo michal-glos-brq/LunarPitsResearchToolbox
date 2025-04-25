@@ -14,12 +14,13 @@ from typing import Dict, List, Tuple, Optional
 from tqdm import tqdm
 
 from src.db.interface import Sessions
-from experiments.simulations.lunar_pit_simulation import BaseSimulationConfig
+from src.experiments.simulations.lunar_pit_simulation import BaseSimulationConfig
 from src.filters import FILTER_MAP
 from src.global_config import TQDM_NCOLS
+from src.global_config import LOG_LEVEL
 
 logger = logging.getLogger(__name__)
-
+logging.basicConfig(level=LOG_LEVEL)
 
 def merge_intervals(
     timestamps: List[float], base_step: float, margin: float = 0.1, correction: float = 1.6

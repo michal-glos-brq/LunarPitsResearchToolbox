@@ -12,7 +12,6 @@ from src.SPICE.instruments.subinstruments import SubInstrument
 from src.global_config import LUNAR_FRAME, LUNAR_FRAME
 from src.SPICE.config import ABBERRATION_CORRECTION
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 

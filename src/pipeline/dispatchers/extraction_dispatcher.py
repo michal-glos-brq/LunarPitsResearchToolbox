@@ -5,13 +5,14 @@ import spiceypy as spice
 from astropy.time import TimeDelta
 
 from src.structures import IntervalManager
-from experiments.extractions.lunar_pit_data_extraction import BaseExtractionConfig
+from src.experiments.extractions.lunar_pit_data_extraction import BaseExtractionConfig
 from src.pipeline.app import run_data_extraction_task
 from src.pipeline.dispatchers.base_dispatcher import BaseTaskRunner
 from src.db.interface import Sessions
 from src.SPICE.kernel_utils.spice_kernels import BaseKernel
 from src.SPICE.config import root_path
 
+logger = logging.getLogger(__name__)
 
 class ExtractorTaskRunner(BaseTaskRunner):
     """
@@ -40,7 +41,7 @@ class ExtractorTaskRunner(BaseTaskRunner):
         current_time = start_time
         task_counter = 0
 
-        logging.info(f"Splitting time into task chunks ...")
+        logger.info(f"Splitting time into task chunks ...")
 
         time_list = []
         current_time = start_time
@@ -51,14 +52,14 @@ class ExtractorTaskRunner(BaseTaskRunner):
 
         et_list = [spice.utc2et(t.iso) for t in time_list]
 
-        logging.info("Obtaining intervals from the DB ...")
+        logger.info("Obtaining intervals from the DB ...")
         intervals = Sessions.get_simulation_intervals(config.instrument_names, config.interval_name)
 
-        logging.info("Initializing interval managers ...")
+        logger.info("Initializing interval managers ...")
         interval_manager = IntervalManager(intervals)
         interval_managers = interval_manager.split_by_timestamps(et_list)
 
-        logging.info(
+        logger.info(
             f"Submitting tasks for extraction: {config.experiment_name}; run {name}; intervals: {config.interval_name}"
         )
 
@@ -79,10 +80,10 @@ class ExtractorTaskRunner(BaseTaskRunner):
 
             if not dry_run:
                 result = run_data_extraction_task.delay(**task_kwargs)
-                logging.info(f"  Task {task_counter}: {start_time.iso} → {end_time.iso} | Task ID: {result.id}")
+                logger.info(f"  Task {task_counter}: {start_time.iso} → {end_time.iso} | Task ID: {result.id}")
             else:
-                logging.info(f"  Task {task_counter}: {start_time.iso} → {end_time.iso} | (Dry run)")
+                logger.info(f"  Task {task_counter}: {start_time.iso} → {end_time.iso} | (Dry run)")
 
             task_counter += 1
 
-        logging.info(f"Submitted {task_counter} tasks successfully.")
+        logger.info(f"Submitted {task_counter} tasks successfully.")

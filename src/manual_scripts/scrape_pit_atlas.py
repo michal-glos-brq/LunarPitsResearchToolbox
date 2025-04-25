@@ -59,7 +59,7 @@ from src.db.models.lunar_pit_atlas import PitDetailsMongoObject, PitsMongoObject
 from src.global_config import LOG_LEVEL
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=getattr(logging, LOG_LEVEL), format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
 # Constants and configuration.

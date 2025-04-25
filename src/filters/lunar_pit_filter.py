@@ -1,3 +1,4 @@
+import numpy as np
 from filelock import FileLock
 
 from .point_filter import PointFilter

@@ -4,10 +4,14 @@ import argparse
 import logging
 from dataclasses import dataclass
 
-from experiments.simulations.lunar_pit_simulation import BaseSimulationConfig
-from experiments.extractions.lunar_pit_data_extraction import BaseExtractionConfig
+from src.experiments.simulations.lunar_pit_simulation import BaseSimulationConfig
+from src.experiments.extractions.lunar_pit_data_extraction import BaseExtractionConfig
 from src.pipeline.dispatchers.simulation_dispatcher import RemoteSensingTaskRunner
 from src.pipeline.dispatchers.extraction_dispatcher import ExtractorTaskRunner
+from src.global_config import LOG_LEVEL
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
 @dataclass

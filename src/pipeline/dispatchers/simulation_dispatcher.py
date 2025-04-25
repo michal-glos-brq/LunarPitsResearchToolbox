@@ -3,10 +3,11 @@ from typing import Optional
 
 from astropy.time import TimeDelta
 
-from experiments.simulations.lunar_pit_simulation import BaseSimulationConfig
+from src.experiments.simulations.lunar_pit_simulation import BaseSimulationConfig
 from src.pipeline.app import run_remote_sensing_simulation_task
 from src.pipeline.dispatchers.base_dispatcher import BaseTaskRunner
 
+logger = logging.getLogger(__name__)
 
 class RemoteSensingTaskRunner(BaseTaskRunner):
     """
@@ -25,7 +26,7 @@ class RemoteSensingTaskRunner(BaseTaskRunner):
         current_time = start_time
         task_counter = 0
 
-        logging.info(f"Submitting tasks for experiment: {config_name}")
+        logger.info(f"Submitting tasks for experiment: {config_name}")
         while current_time < end_time:
             next_time = min(current_time + step, end_time)
 
@@ -39,11 +40,11 @@ class RemoteSensingTaskRunner(BaseTaskRunner):
 
             if not dry_run:
                 result = run_remote_sensing_simulation_task.delay(**task_kwargs)
-                logging.info(f"  Task {task_counter}: {current_time.iso} → {next_time.iso} | Task ID: {result.id}")
+                logger.info(f"  Task {task_counter}: {current_time.iso} → {next_time.iso} | Task ID: {result.id}")
             else:
-                logging.info(f"  Task {task_counter}: {current_time.iso} → {next_time.iso} | (Dry run)")
+                logger.info(f"  Task {task_counter}: {current_time.iso} → {next_time.iso} | (Dry run)")
 
             current_time = next_time
             task_counter += 1
 
-        logging.info(f"Submitted {task_counter} tasks successfully.")
+        logger.info(f"Submitted {task_counter} tasks successfully.")

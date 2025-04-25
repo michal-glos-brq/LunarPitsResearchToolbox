@@ -9,14 +9,7 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: password
-    storage:
-      journal:
-        enabled: false
-      engine: wiredTiger
-      wiredTiger:
-        engineConfig:
-          # default is 60 s—push to 300 s
-          checkpointDelaySecs: 300
+
     restart: always
 
   redis:
