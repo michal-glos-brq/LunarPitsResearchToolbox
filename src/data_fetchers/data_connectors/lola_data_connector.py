@@ -32,13 +32,103 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # Basically the end of active measurements. Passive values still present, could be potentially processed,
-# hence no hard limit on latest_active_lola_date. 
+# hence no hard limit on latest_active_lola_date.
 latest_active_lola_date = Time("2013-07-01T00:00:00", format="isot", scale="utc")
 one_minute_delta = TimeDelta(60, format="sec")
 pickle_file = os.path.join(LOLA_LBL_FILE_DUMP, LOLA_REMOTE_CACHE_FILE)
 compose_lola_url = lambda path: urllib.parse.urljoin(LOLA_BASE_URL, path)
 
 
+COL_SPECS = (
+    [
+        ("MET_SECONDS", 4, True),
+        ("SUBSECONDS", 4, False),
+        # TRANSMIT_TIME: 8 bytes total = 2 × 4-byte words
+        ("TRANSMIT_TIME", 4, False, 2),
+        ("LASER_ENERGY", 4, True),
+        ("TRANSMIT_WIDTH", 4, True),
+        ("SC_LONGITUDE", 4, True),
+        ("SC_LATITUDE", 4, True),
+        ("SC_RADIUS", 4, False),
+        ("SELENOID_RADIUS", 4, False),
+    ]
+    + [
+        # Spots 1–5
+        (f"{fld}_{i}", width, signed)
+        for i in range(1, 6)
+        for fld, width, signed in [
+            ("LONGITUDE", 4, True),
+            ("LATITUDE", 4, True),
+            ("RADIUS", 4, True),
+            ("RANGE", 4, False),
+            ("PULSE", 4, True),
+            ("ENERGY", 4, False),
+            ("BACKGROUND", 4, False),
+            ("THRESHOLD", 4, False),
+            ("GAIN", 4, False),
+            ("SHOT_FLAG", 4, False),
+        ]
+    ]
+    + [
+        # trailing half-words and words
+        (
+            "OFFNADIR_ANGLE",
+            2,
+            False,
+        ),  # COLUMN 60 :contentReference[oaicite:2]{index=2}&#8203;:contentReference[oaicite:3]{index=3}
+        (
+            "EMISSION_ANGLE",
+            2,
+            False,
+        ),  # COLUMN 61 :contentReference[oaicite:4]{index=4}&#8203;:contentReference[oaicite:5]{index=5}
+        (
+            "SOLAR_INCIDENCE",
+            2,
+            False,
+        ),  # COLUMN 62 :contentReference[oaicite:6]{index=6}&#8203;:contentReference[oaicite:7]{index=7}
+        (
+            "SOLAR_PHASE",
+            2,
+            False,
+        ),  # COLUMN 63 :contentReference[oaicite:8]{index=8}&#8203;:contentReference[oaicite:9]{index=9}
+        (
+            "EARTH_RANGE",
+            4,
+            False,
+        ),  # COLUMN 64 :contentReference[oaicite:10]{index=10}&#8203;:contentReference[oaicite:11]{index=11}
+        (
+            "EARTH_PULSE",
+            2,
+            False,
+        ),  # COLUMN 65 :contentReference[oaicite:12]{index=12}&#8203;:contentReference[oaicite:13]{index=13}
+        (
+            "EARTH_ENERGY",
+            2,
+            False,
+        ),  # COLUMN 66 :contentReference[oaicite:14]{index=14}&#8203;:contentReference[oaicite:15]{index=15}
+    ]
+)
+
+
+def diviner_rdr_dtype():
+    base_map = {
+        1: (np.int8, np.uint8),
+        2: (np.int16, np.uint16),
+        4: (np.int32, np.uint32),
+    }
+    dt = []
+    for spec in COL_SPECS:
+        name, b, signed, *rest = spec
+        count = rest[0] if rest else 1
+        if b not in base_map:
+            raise ValueError(f"Invalid byte-width {b}")
+        base = base_map[b][not signed]
+        if count == 1:
+            dt.append((name, base))
+        else:
+            for i in range(count):
+                dt.append((f"{name}_{i}", base))
+    return np.dtype(dt)
 
 
 class LOLADataConnector(BaseDataConnector):
@@ -131,7 +221,6 @@ class LOLADataConnector(BaseDataConnector):
         for file_dict in dataset_slice:
             lbl_tasks.append((file_dict, self.fetch_url_async(compose_lola_url(file_dict["lbl"]))))
 
-
         virtual_files: List[VirtualFile] = []
         for file_dict, fut in tqdm(lbl_tasks, desc="Downloading metadata", disable=SUPRESS_TQDM):
             resp = fut.result()
@@ -146,38 +235,65 @@ class LOLADataConnector(BaseDataConnector):
         return virtual_files
 
     def _parse_current_file(self):
-        # In case the current file is not downloaded yet, wait until it is
         self.current_file.wait_to_be_downloaded()
-        # Assume self.current_file.file is fully loaded
-        with zipfile.ZipFile(self.current_file.file, "r") as zip_file:
-            # In DIVINER dataset, there is just a single data file within the ZIP archive
-            with zip_file.open(zip_file.filelist[0]) as f:
-                df = pd.read_csv(
-                    io.StringIO(f.read().decode("utf-8")),
-                    skiprows=3,
-                    delimiter=",",
-                    usecols=list(dtypes.keys()),
-                    skipinitialspace=True,
-                )
+        raw = self.current_file.file.read()
+        arr = np.frombuffer(raw, dtype=diviner_rdr_dtype())
+        df = pd.DataFrame(arr)
 
-                def sclk_float_to_scs2e_str(arr: np.ndarray) -> List[str]:
-                    sec = np.floor(arr).astype(int)
-                    ticks = np.round((arr - sec) * 65536).astype(int)
-                    return [f"{s}:{t}" for s, t in zip(sec, ticks)]
+        df.replace(
+            {
+                np.int32(-2147483648): np.nan,
+                np.uint32(4294967295): np.nan,
+                np.uint16(65535): np.nan,
+            },
+            inplace=True,
+        )
 
-                sclk_strings = sclk_float_to_scs2e_str(df["sclk"].values)
-                df["et"] = [spice.scs2e(LRO_INT_ID, sclk) for sclk in sclk_strings]
-                df.sort_values("et", inplace=True)
-                self.current_file.data = df
+        df["et"] = df["TRANSMIT_TIME_0"].astype("float64") + df["TRANSMIT_TIME_1"] * (2**-32)
+        df.drop(
+            columns=[
+                "TRANSMIT_TIME_0",
+                "TRANSMIT_TIME_1",
+                "MET_SECONDS",
+                "SUBSECONDS",
+                "EARTH_RANGE",
+                "EARTH_PULSE",
+                "EARTH_ENERGY",
+            ],
+            inplace=True,
+        )
+
+        stubs = [
+            "LONGITUDE",
+            "LATITUDE",
+            "RADIUS",
+            "RANGE",
+            "PULSE",
+            "ENERGY",
+            "BACKGROUND",
+            "THRESHOLD",
+            "GAIN",
+            "SHOT_FLAG",
+        ]
+
+        df = df.reset_index(drop=True).rename_axis('row_id').reset_index()
+        df = pd.wide_to_long(
+            df,
+            stubnames=stubs,
+            i="row_id",  # identifies each original frame
+            j="spot",  # new column will be called “spot”
+            sep="_",  # stubs are separated from numbers by “_”
+            suffix="\\d+",  # the suffix is one or more digits
+        ).reset_index()
+
+        df.drop(columns=["row_id"], inplace=True)
+        self.current_file.data = df
 
     def _get_interval_data_from_current_file(self, time_interval: TimeInterval):
-        # We assume the file is parsed, as is implemented in _load_next_file method logic
         data = self.current_file.data.loc[
             (self.current_file.data.et > time_interval.start_et) & (self.current_file.data.et < time_interval.end_et)
         ].copy()
-        data["c"] = -1
-        data["det"] = -1
-        data[["cx_dsk", "cy_dsk", "cz_dsk"]] = self.kernel_manager.dsk.latlon_to_cartesian(data["clat"], data["clon"])
+        data["spot"] -= 1
         return data.to_dict(orient="records")
 
     def process_data_entry(
@@ -185,11 +301,7 @@ class LOLADataConnector(BaseDataConnector):
     ) -> Optional[Dict]:
         et = data_entry["et"]
         self.kernel_manager.step_et(et)
-        projection_vector = (
-            instrument.sub_instruments[data_entry["c"]]
-            .pixels[data_entry["det"]]
-            .transformed_boresight(instrument.frame, et)
-        )
+        projection_vector = instrument.sub_instruments[data_entry["spot"]].transformed_boresight(instrument.frame, et)
 
         projection: ProjectionPoint = instrument.project_vector(et, projection_vector)
         if filter_obj.point_pass(projection.projection):
@@ -197,3 +309,4 @@ class LOLADataConnector(BaseDataConnector):
             return data_entry
         else:
             return None
+

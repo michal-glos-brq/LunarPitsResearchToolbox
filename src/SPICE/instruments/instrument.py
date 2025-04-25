@@ -2,12 +2,12 @@
 
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import List, Tuple
 
 import numpy as np
 import spiceypy as spice
 
+from src.structures import ProjectionPoint
 from src.SPICE.instruments.subinstruments import SubInstrument
 from src.global_config import LUNAR_FRAME, LUNAR_FRAME
 from src.SPICE.config import ABBERRATION_CORRECTION
@@ -16,23 +16,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class ProjectionPoint:
-    et: float
-    projection: np.array
-    projection_trgepc: float
-    spacecraft_relative: np.array
 
-    def to_data(self):
-        return {
-            "cx_projected": self.projection[0],
-            "cy_projected": self.projection[1],
-            "cz_projected": self.projection[2],
-            "trgepc": self.projection_trgepc,
-            "sc_pos_x" : self.spacecraft_relative[0] + self.projection[0],
-            "sc_pos_y" : self.spacecraft_relative[1] + self.projection[1],
-            "sc_pos_z" : self.spacecraft_relative[2] + self.projection[2],
-        }
 
 class BaseInstrument(ABC):
     """This class serves the purpose of defining all the configurable attributes of instruments"""

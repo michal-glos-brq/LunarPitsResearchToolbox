@@ -18,7 +18,6 @@ class DivinerInstrument(BaseInstrument):
     # To correctly load initial state, min_time + 4 julian days ...
 
     STATIC_INSTRUMENT = False
-    DYNAMIC_KERNEL_OFFSET_JD = 4.0
     name = "DIVINER"
     satellite_name = LRO_STR_ID
     # LRO spacecraft attitude frame

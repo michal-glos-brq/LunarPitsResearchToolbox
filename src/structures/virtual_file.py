@@ -6,11 +6,14 @@ from typing import Optional, Dict
 
 from io import BytesIO
 
-from src.data_fetchers.config import MAX_RETRIES, DOWNLOAD_TIMEOUT, DOWNLOAD_CHUNK_SIZE
-from src.structures import TimeInterval
+from .interval_manager import TimeInterval
+
+MAX_RETRIES = 128
+DOWNLOAD_TIMEOUT = 60 * 60 * 2 # 2 hours
+DOWNLOAD_CHUNK_SIZE = 8 * 1024 # 8 KB
 
 
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)-8s %(message)s")
+logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
 logger = logging.getLogger(__name__)
 
 

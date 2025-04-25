@@ -469,7 +469,7 @@ class LROKernelManager(BaseKernelManager, LunarKernelManagerMixin, LROKernelMana
             self.load_static_kernels()
 
 
-class GRAILKernelManager(LunarKernelManager):
+class GRAILKernelManager(LunarKernelManager, GRAILKernelManagerMixin):
 
     def __init__(
         self,

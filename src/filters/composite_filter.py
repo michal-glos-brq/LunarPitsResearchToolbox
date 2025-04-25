@@ -1,3 +1,5 @@
+import numpy as np
+
 from .base_filter import BaseFilter
 
 

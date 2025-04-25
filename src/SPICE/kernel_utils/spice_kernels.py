@@ -51,13 +51,14 @@ from urllib.parse import urljoin
 from typing import Optional, List, Dict, Sequence, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from astropy.time import Time
 import spiceypy as spice
+from astropy.time import Time
+from filelock import FileLock
 from tqdm import tqdm
 from bs4 import BeautifulSoup as bs
 
-from structures import SharedFileUseLock
-from filelock import FileLock
+from src.structures import SharedFileUseLock
+
 from src.global_config import TQDM_NCOLS, SUPRESS_TQDM
 from src.SPICE.config import (
     MAX_LOADED_DYNAMIC_KERNELS,
