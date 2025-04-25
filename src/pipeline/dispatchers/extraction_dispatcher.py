@@ -5,7 +5,7 @@ import spiceypy as spice
 from astropy.time import TimeDelta
 
 from src.structures import IntervalManager
-from src.experiments.extractions import BaseExtractionConfig
+from experiments.extractions.lunar_pit_data_extraction import BaseExtractionConfig
 from src.pipeline.app import run_data_extraction_task
 from src.pipeline.dispatchers.base_dispatcher import BaseTaskRunner
 from src.db.interface import Sessions

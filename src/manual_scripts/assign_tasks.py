@@ -4,8 +4,8 @@ import argparse
 import logging
 from dataclasses import dataclass
 
-from src.experiments.simulations import BaseSimulationConfig
-from src.experiments.extractions import BaseExtractionConfig
+from experiments.simulations.lunar_pit_simulation import BaseSimulationConfig
+from experiments.extractions.lunar_pit_data_extraction import BaseExtractionConfig
 from src.pipeline.dispatchers.simulation_dispatcher import RemoteSensingTaskRunner
 from src.pipeline.dispatchers.extraction_dispatcher import ExtractorTaskRunner
 
@@ -55,7 +55,9 @@ class TaskConfig:
 def main():
     parser = argparse.ArgumentParser(description="Task runner for lunar simulation experiments.")
     parser.add_argument(
-        "--task", choices=TASK_CLASSES.keys(), help="Type of task to run (currently only 'remote_sensing' is supported)."
+        "--task",
+        choices=TASK_CLASSES.keys(),
+        help="Type of task to run (currently only 'remote_sensing' is supported).",
     )
     parser.add_argument("--config-name", help="Name of the experiment config to use.")
     parser.add_argument(

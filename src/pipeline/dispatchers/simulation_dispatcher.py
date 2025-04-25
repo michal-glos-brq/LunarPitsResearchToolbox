@@ -3,7 +3,7 @@ from typing import Optional
 
 from astropy.time import TimeDelta
 
-from src.experiments.simulations import BaseSimulationConfig
+from experiments.simulations.lunar_pit_simulation import BaseSimulationConfig
 from src.pipeline.app import run_remote_sensing_simulation_task
 from src.pipeline.dispatchers.base_dispatcher import BaseTaskRunner
 

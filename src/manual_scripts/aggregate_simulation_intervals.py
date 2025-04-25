@@ -14,14 +14,16 @@ from typing import Dict, List, Tuple, Optional
 from tqdm import tqdm
 
 from src.db.interface import Sessions
-from src.experiments.simulations import BaseSimulationConfig
+from experiments.simulations.lunar_pit_simulation import BaseSimulationConfig
 from src.filters import FILTER_MAP
 from src.global_config import TQDM_NCOLS
 
 logger = logging.getLogger(__name__)
 
 
-def merge_intervals(timestamps: List[float], base_step: float, margin: float = 0.1, correction: float = 1.6) -> List[Tuple[float, float]]:
+def merge_intervals(
+    timestamps: List[float], base_step: float, margin: float = 0.1, correction: float = 1.6
+) -> List[Tuple[float, float]]:
     """
     Merge a sorted list of timestamps (ephemeris time as float) into continuous intervals.
 
@@ -58,7 +60,10 @@ def merge_intervals(timestamps: List[float], base_step: float, margin: float = 0
     merged_corrected_interval = [intervals.pop(0)]
     for start, end in intervals:
         if start <= merged_corrected_interval[-1][1]:
-            merged_corrected_interval[-1] = (merged_corrected_interval[-1][0], max(merged_corrected_interval[-1][1], end))
+            merged_corrected_interval[-1] = (
+                merged_corrected_interval[-1][0],
+                max(merged_corrected_interval[-1][1], end),
+            )
         else:
             merged_corrected_interval.append((start, end))
 
@@ -178,4 +183,4 @@ if __name__ == "__main__":
 
     sim_names = list({name.strip() for name in args.sim_names.split(",")})
     result = aggregate_simulation_intervals(args.config_name, sim_names, threshold=args.threshold)
-    Sessions.insert_simulation_intervals(sim_names,  result, args.threshold, args.interval_name)
+    Sessions.insert_simulation_intervals(sim_names, result, args.threshold, args.interval_name)
