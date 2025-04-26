@@ -30,7 +30,9 @@ class SharedFileUseLock:
         # Create a unique lock file name.
         self.lock_path = os.path.join(self.lock_dir, f"{uuid.uuid4().hex}.lock")
         # Clean up any stale locks in the directory.
-        self.cleanup_stale_locks()
+        is_used = self.is_in_use(cleanup_stale=True)
+        if not is_used and os.path.getsize(target_path) == 0:
+            logger.info("File is empty, deleting it: %s", target_path)
 
     def register_use(self) -> str:
         """
@@ -39,6 +41,7 @@ class SharedFileUseLock:
         """
         # Use a FileLock (not the auto-cleanup one) so that the file remains after the block.
         with FileLock(self.lock_path, timeout=SPICE_KERNEL_LOCK_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL):
+
             with open(self.lock_path, "w") as f:
                 f.write(str(os.getpid()))
         return self.lock_path

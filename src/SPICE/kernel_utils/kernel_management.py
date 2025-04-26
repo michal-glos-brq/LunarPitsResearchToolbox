@@ -147,11 +147,19 @@ class BaseKernelManager(ABC):
 
     @property
     def min_loaded_time(self) -> Time:
-        return max([kernel.min_loaded_time for kernel in self.dynamic_kernels if kernel.min_loaded_time]) if self.dynamic_kernels else None
+        return (
+            max([kernel.min_loaded_time for kernel in self.dynamic_kernels if kernel.min_loaded_time])
+            if self.dynamic_kernels
+            else None
+        )
 
     @property
     def max_loaded_time(self) -> Time:
-        return min([kernel.max_loaded_time for kernel in self.dynamic_kernels if kernel.max_loaded_time]) if self.dynamic_kernels else None
+        return (
+            min([kernel.max_loaded_time for kernel in self.dynamic_kernels if kernel.max_loaded_time])
+            if self.dynamic_kernels
+            else None
+        )
 
     def step(self, time: Time):
         return all([kernel.reload_kernels(time) for kernel in self.dynamic_kernels])
@@ -299,16 +307,18 @@ class LROKernelManagerMixin:
             )
         else:
             # Much more precise data
-            self.dynamic_kernels.append(LBLDynamicKernelLoader(
-                lro_path("spk"),
-                "https://pds-geosciences.wustl.edu/lro/lro-l-rss-1-tracking-v1/lrors_0001/data/spk/",
-                r"/lro/lro-l-rss-1-tracking-v1/lrors_0001/data/spk/lro_.*grgm900c_l600.*bsp",
-                r"/lro/lro-l-rss-1-tracking-v1/lrors_0001/data/spk/lro_.*grgm900c_l600.*lbl",
-                pre_download_kernels=pre_download_kernels,
-                min_time_to_load=min_required_time,
-                max_time_to_load=max_required_time,
-                keep_kernels=keep_dynamic_kernels,
-            ))
+            self.dynamic_kernels.append(
+                LBLDynamicKernelLoader(
+                    lro_path("spk"),
+                    "https://pds-geosciences.wustl.edu/lro/lro-l-rss-1-tracking-v1/lrors_0001/data/spk/",
+                    r"/lro/lro-l-rss-1-tracking-v1/lrors_0001/data/spk/lro_.*grgm900c_l600.*bsp",
+                    r"/lro/lro-l-rss-1-tracking-v1/lrors_0001/data/spk/lro_.*grgm900c_l600.*lbl",
+                    pre_download_kernels=pre_download_kernels,
+                    min_time_to_load=min_required_time,
+                    max_time_to_load=max_required_time,
+                    keep_kernels=keep_dynamic_kernels,
+                )
+            )
         if diviner_ck:
             # For now, callbacks serve no actual purpose. Left here in case it would be needed
             # diviner_callback = [ (lambda et: spice.pxform("LRO_DLRE", "LRO_DLRE", et), [0], {}) ]

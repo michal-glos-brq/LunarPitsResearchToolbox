@@ -176,7 +176,8 @@ class BaseKernel:
                     else:
                         logger.warning("File %s is empty, retrying download", filename)
                         os.remove(filename)
-                        os.remove(tmp_filename)
+                        if os.path.exists(tmp_filename):
+                            os.remove(tmp_filename)
 
     
     def _download_file(self, url: str, filename: str) -> None:
