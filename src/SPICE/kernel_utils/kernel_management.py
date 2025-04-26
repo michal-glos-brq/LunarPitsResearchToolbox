@@ -162,7 +162,11 @@ class BaseKernelManager(ABC):
         )
 
     def step(self, time: Time):
-        return all([kernel.reload_kernels(time) for kernel in self.dynamic_kernels])
+        try:
+            return all([kernel.reload_kernels(time) for kernel in self.dynamic_kernels])
+        except Exception as e:
+            print(f"Error while loading dynamic kernels: {e}")
+            return False
 
     def step_et(self, et: float):
         return self.step(Time(spice.et2utc(et, "ISOC", SPICE_DECIMAL_PRECISION), format="isot", scale="utc"))
