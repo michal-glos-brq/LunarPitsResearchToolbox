@@ -102,9 +102,6 @@ class RemoteSensingSimulator:
             self.satellite_name = satellite_name
             self.spacecraft_position_computation_failed = []
             self.spacecraft_position_computation_failed_counter = 0
-            self.spacecraft_position_computation_failed_collection = Sessions.get_spacecraft_position_failed_collection(
-                satellite_name
-            )
 
         def _setup_time(self, time_obj: Time):
             """Initialize the simulation timing. Can be used for reset too."""
