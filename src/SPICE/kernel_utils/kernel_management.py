@@ -147,11 +147,11 @@ class BaseKernelManager(ABC):
 
     @property
     def min_loaded_time(self) -> Time:
-        return max([kernel.min_loaded_time for kernel in self.dynamic_kernels]) if self.dynamic_kernels else None
+        return max([kernel.min_loaded_time for kernel in self.dynamic_kernels if kernel.min_loaded_time]) if self.dynamic_kernels else None
 
     @property
     def max_loaded_time(self) -> Time:
-        return min([kernel.max_loaded_time for kernel in self.dynamic_kernels]) if self.dynamic_kernels else None
+        return min([kernel.max_loaded_time for kernel in self.dynamic_kernels if kernel.max_loaded_time]) if self.dynamic_kernels else None
 
     def step(self, time: Time):
         return all([kernel.reload_kernels(time) for kernel in self.dynamic_kernels])

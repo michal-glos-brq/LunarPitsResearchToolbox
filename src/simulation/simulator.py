@@ -77,7 +77,7 @@ class RemoteSensingSimulator:
                 f"✅ {len(self.positive_sensing_batch):>4} | T {self.total_success:<5}".ljust(24),
                 f"❌ {len(self.failed_computation_batch):>4} | T {self.total_failed:<5}".ljust(24),
                 # Distance from instrument to boresight projection - "height"
-                f"📏 Max Height: {self.heights.maximum:>7.2f}".ljust(24),
+                f"📏 Max distance: {self.heights.maximum:>7.2f}".ljust(24),
                 # Basically assumed FOV radisu
                 f"🎯 Max FOV:    {self.fov_widths.maximum:>7.2f}".ljust(24),
             ]

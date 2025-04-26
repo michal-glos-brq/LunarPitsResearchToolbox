@@ -21,7 +21,6 @@ from astropy.time import Time, TimeDelta
 from src.structures import VirtualFile, TimeInterval, IntervalList, ProjectionPoint
 from src.data_fetchers.data_connectors.base_data_connector import BaseDataConnector
 from src.data_fetchers.config import LOLA_BASE_URL, LOLA_LBL_FILE_DUMP, LOLA_REMOTE_CACHE_FILE, LOLA_DATASET_ROOT
-from src.SPICE.config import LRO_INT_ID
 from src.SPICE.utils import NoDatetimeDecoder
 from src.global_config import SUPRESS_TQDM
 from src.filters import BaseFilter

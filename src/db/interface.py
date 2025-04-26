@@ -187,15 +187,6 @@ class Sessions:
     ##########################################################################################
 
     @staticmethod
-    def get_spacecraft_position_failed_collection(spacecraft_name: str):
-        """
-        Returns the failed collection for the given instrument.
-        """
-        session = Sessions.get_db_session(SIMULATION_DB_NAME)
-        failed_collection_name = f"{spacecraft_name.replace(' ', '_')}_satellite_position_failed"
-        return session[failed_collection_name]
-
-    @staticmethod
     def prepare_simulation_collections(
         instrument_name: str, indices: List[str] = ["et", "meta.simulation_id", "bound_distance"]
     ):
@@ -350,7 +341,9 @@ class Sessions:
         session[SIMULATION_METADATA_COLLECTION].update_one({"_id": metadata_id}, {"$set": update_fields})
 
     @staticmethod
-    def simulation_tasks_query(filter_name: str, simulation_names: List[str], instrument_names: List[str]) -> List[dict]:
+    def simulation_tasks_query(
+        filter_name: str, simulation_names: List[str], instrument_names: List[str]
+    ) -> List[dict]:
         """
         Queries the simulation metadata collection for tasks that match the specified filter_name,
         simulation_name, and list of instrument_names. The results are sorted by the "start_time" field.
