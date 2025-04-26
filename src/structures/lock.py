@@ -29,10 +29,12 @@ class SharedFileUseLock:
         self.check_stale = check_stale
         # Create a unique lock file name.
         self.lock_path = os.path.join(self.lock_dir, f"{uuid.uuid4().hex}.lock")
-        # Clean up any stale locks in the directory.
+        # Clean up any stale locks in the directory. If file was downloaded with zero size (somehow)
+        # Delete it - farcing re-download
         is_used = self.is_in_use(cleanup_stale=True)
-        if not is_used and os.path.getsize(target_path) == 0:
-            logger.info("File is empty, deleting it: %s", target_path)
+        if not is_used and os.path.exists(target_path) and os.path.getsize(target_path) == 0:
+            logger.info("File is empty and not in use, deleting it: %s", target_path)
+            os.remove(target_path)
 
     def register_use(self) -> str:
         """
