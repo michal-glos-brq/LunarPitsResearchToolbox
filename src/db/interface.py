@@ -494,7 +494,6 @@ class Sessions:
 
         return collection
 
-    #### TODO: Implement after the extraction loop is implemented
     @staticmethod
     def prepare_extraction_metadata(extraction_metadata: dict) -> bool:
         """
@@ -530,7 +529,7 @@ class Sessions:
             return False
 
     @staticmethod
-    def start_background_update_extraction_metadata(metadata_id, current_time_datetime, finished=None, metadata=None):
+    def start_background_update_extraction_metadata(metadata_id, current_time_datetime: datetime, finished=None, metadata=None):
         """
         Spawns a background thread to update the simulation metadata document.
         """
@@ -550,6 +549,21 @@ class Sessions:
             update_fields["metadata"] = metadata
         session = Sessions.get_db_session(SIMULATION_DB_NAME)
         session[SIMULATION_METADATA_COLLECTION].update_one({"_id": metadata_id}, {"$set": update_fields})
+
+    @staticmethod
+    def remove_potentail_data_from_failed_task_runs(start_et: float, end_et: float, extraction_name: str, collection):
+        """
+        Removes data from the failed task runs that are within the specified time range.
+        This is useful to clean up data that may have been partially processed to avoid duplication.
+        """
+        query = {
+            "meta.et": {"$gte": start_et, "$lte": end_et},
+            "meta.extraction_name": extraction_name,
+        }
+        collection.delete_many(query)
+        logging.info(f"Removed data from failed task runs for {extraction_name} between {start_et} and {end_et}.")
+        
+        
 
     ##########################################################################################
     #####                               Background Tasks                                 #####

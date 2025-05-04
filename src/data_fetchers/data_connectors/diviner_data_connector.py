@@ -68,13 +68,13 @@ class DivinerDataConnector(BaseDataConnector):
     name = "DIVINER"
 
     timeseries = {
-        "timeField": "et",
+        "timeField": "timestamp",
         "metaField": "meta",
         "granularity": "seconds",
     }
 
     indices = [
-        "et",  # always index your time field
+        "meta.et",  # always index your time field
         "orbit",  # if you ever query by orbit
         "c",  # channel
         "det",  # detector
@@ -85,7 +85,7 @@ class DivinerDataConnector(BaseDataConnector):
         "cx_projected",  # Projected coordinates
         "cy_projected",
         "cz_projected",
-        "meta._simulation_name",  # if you ever query by simulation name
+        "meta.extraction_name",  # if you ever query by simulation name
     ]
 
     def discover_year_urls(self, min_time: Time, max_time: Time) -> Dict[Tuple[int, int], str]:

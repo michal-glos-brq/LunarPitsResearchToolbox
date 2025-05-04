@@ -101,6 +101,7 @@ class BaseKernelManager(ABC):
 
     def __init__(self, min_required_time: Time = None, max_required_time: Time = None):
         # In case we want only partial coverage, have it universally accesible
+        self.static_kernel_manager = None
         self.min_required_time = min_required_time
         self.max_required_time = max_required_time
 
@@ -142,7 +143,8 @@ class BaseKernelManager(ABC):
             dynamic_kernel.unload()
 
     def load_static_kernels(self) -> None:
-        self.static_kernel_manager = StaticKernelLoader(self.static_kernels)
+        if self.static_kernel_manager is None:
+            self.static_kernel_manager = StaticKernelLoader(self.static_kernels)
         self.static_kernel_manager.load()
 
     @property

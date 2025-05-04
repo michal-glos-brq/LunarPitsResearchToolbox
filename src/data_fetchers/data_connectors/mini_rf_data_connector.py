@@ -44,12 +44,12 @@ class MiniRFDataConnector(BaseDataConnector):
     name = "MiniRF"
 
     timeseries = {
-        "timeField": "et",
+        "timeField": "timestamp",
         "metaField": "meta",
         "granularity": "seconds",
     }
 
-    indices = []
+    indices = ["meta.et", "meta.extraction_name", "cx_projected", "cy_projected", "cz_projected"]
 
     @property
     def dataset_structure(self):

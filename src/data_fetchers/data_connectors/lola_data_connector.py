@@ -68,12 +68,12 @@ class LOLADataConnector(BaseDataConnector):
     name = "LOLA"
 
     timeseries = {
-        "timeField": "et",
+        "timeField": "timestamp",
         "metaField": "meta",
         "granularity": "seconds",
     }
 
-    indices = []
+    indices = ["meta.et", "meta.extraction_name", "cx_projected", "cy_projected", "cz_projected"]
 
     @property
     def dataset_structure(self):
@@ -156,7 +156,7 @@ class LOLADataConnector(BaseDataConnector):
 
         dataset_slice = []
         for time_interval, (_, file_dict) in zip(inclusive_dataset_structure, self.dataset_structure):
-            if (time_intervals.get_intervals_intersection(time_interval)):
+            if time_intervals.get_intervals_intersection(time_interval):
                 dataset_slice.append(file_dict)
 
         lbl_tasks: List[Tuple[Dict[str, str], Future]] = []
@@ -246,7 +246,7 @@ class LOLADataConnector(BaseDataConnector):
 
         projection_vector = instrument.sub_instruments[data_entry["spot"]].transformed_boresight(instrument.frame, et)
         projection: ProjectionPoint = instrument.project_vector(et, projection_vector)
-        
+
         if filter_obj.point_pass(projection.projection):
             data_entry.update(projection.to_data())
             return data_entry

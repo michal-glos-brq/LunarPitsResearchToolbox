@@ -472,7 +472,8 @@ class RemoteSensingSimulator:
 
         # Await all threads.
         for thread in self.threads:
-            thread.join()
+            if thread is not None:
+                thread.join()
 
         Sessions.process_failed_inserts()
 
@@ -483,3 +484,7 @@ class RemoteSensingSimulator:
             metadata=self.simulation_quality_metadata,
         )
         self.threads.append(update_thread)
+
+        for thread in self.threads:
+            if thread is not None:
+                thread.join()
