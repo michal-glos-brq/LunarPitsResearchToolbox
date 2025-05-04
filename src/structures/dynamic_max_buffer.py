@@ -3,6 +3,7 @@ import numpy as np
 
 MIN_FLOAT = float("-inf")
 
+
 class DynamicMaxBuffer:
     """
     This class creates a dynamic, buffered maximum value.
@@ -21,7 +22,9 @@ class DynamicMaxBuffer:
         """
         Returns the current maximum value in the buffer.
         """
-        return self.default if self._maximum == MIN_FLOAT else self._maximum
+        return (
+            self._maximum if self.default is None else (self.default if self._maximum == MIN_FLOAT else self._maximum)
+        )
 
     def set_default(self, value: float):
         self.default = value
@@ -42,4 +45,3 @@ class DynamicMaxBuffer:
                 distance = (max_pos - self.index) % self.buffer_size
                 self.maximum_ttl = distance if distance != 0 else self.buffer_size
         self.index = (self.index + 1) % self.buffer_size
-
