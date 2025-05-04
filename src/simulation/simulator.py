@@ -61,13 +61,13 @@ class RemoteSensingSimulator:
                 height = np.linalg.norm(instrument.project_boresight(current_et).spacecraft_relative)
                 self.heights.add(height)
             except Exception as e:
-                self.heights.add(instrument._height)
+                self.heights.set_default(instrument._height)
                 SPICELog.log_spice_exception(e, f"Initial height calculation for {instrument.name}")
             try:
                 fov_width = instrument.recalculate_bounds_to_boresight_distance(current_et)
                 self.fov_widths.add(fov_width)
             except Exception as e:
-                self.fov_widths.add(instrument._fov_width)
+                self.fov_widths.set_default(instrument._fov_width)
                 SPICELog.log_spice_exception(e, f"Initial FOV calculation for {instrument.name}")
 
         def dump_status_lines(self) -> List[str]:
