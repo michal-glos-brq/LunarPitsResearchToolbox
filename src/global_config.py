@@ -6,6 +6,9 @@ from astropy.time import Time
 ### System level confoguration
 HDD_BASE_PATH = os.environ.get("WORKER_UTILITY_VOLUME", "/app/data")
 
+## Run-through data files will be saved into HDD (SSD) or into RAM
+SAVE_DATAFILES_TO_RAM = bool(os.environ.get("SAVE_DATAFILES_TO_RAM", True))
+
 ## Vanity
 TQDM_NCOLS = 156
 

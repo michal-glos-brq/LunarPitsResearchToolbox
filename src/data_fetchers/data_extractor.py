@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 
 from bson import ObjectId
-from astropy.time import Time, TimeDelta
+from astropy.time import Time
 from tqdm import tqdm
 import spiceypy as spice
 from celery import Task
@@ -15,17 +15,23 @@ from src.SPICE.instruments.instrument import BaseInstrument
 from src.SPICE.kernel_utils.kernel_management import BaseKernelManager
 from src.data_fetchers.data_connectors.base_data_connector import BaseDataConnector
 from src.data_fetchers.data_connectors.diviner_data_connector import DivinerDataConnector
+from src.data_fetchers.data_connectors.lola_data_connector import LOLADataConnector
+from src.data_fetchers.data_connectors.mini_rf_data_connector import MiniRFDataConnector
 from src.filters import BaseFilter
 from src.db.interface import Sessions
 from src.SPICE.utils import et2astropy_time
 from src.data_fetchers.config import MONGO_UPLOAD_BATCH_SIZE
-from src.global_config import SUPRESS_TQDM, TQDM_NCOLS, SPICE_DECIMAL_PRECISION
+from src.global_config import SUPRESS_TQDM, TQDM_NCOLS
+
+from spiceypy import NotFoundError
 
 logger = logging.getLogger(__name__)
 
 
 DATA_CONNECTOR_MAP = {
-    "DIVINER": DivinerDataConnector,
+    DivinerDataConnector.name: DivinerDataConnector,
+    MiniRFDataConnector.name: MiniRFDataConnector,
+    LOLADataConnector.name: LOLADataConnector,
 }
 
 
@@ -36,9 +42,9 @@ class DataFetchingEngine:
 
     class InstrumentState:
 
-        def __init__(self, instrument: BaseInstrument):
+        def __init__(self, instrument: BaseInstrument, instrument_connector: BaseDataConnector):
             self.data_collection = Sessions.prepare_extraction_collections(
-                instrument.name, instrument.timeseries, instrument.indices
+                instrument.name, instrument_connector.timeseries, instrument_connector.indices
             )
             self.total_data = 0
             self.instrument = instrument
@@ -47,13 +53,30 @@ class DataFetchingEngine:
 
     class ExtractionState:
         def __init__(
-            self, kernel_manager: BaseKernelManager, instruments: List[BaseInstrument], filter_object: BaseFilter
+            self,
+            kernel_manager: BaseKernelManager,
+            instruments: List[BaseInstrument],
+            filter_object: BaseFilter,
+            custom_filter_objects: Dict[str, BaseFilter] = {},
         ):
             self.instruments = instruments
             self.filter = filter_object
+            self.custom_filter_objects = custom_filter_objects
             self.kernel_manager = kernel_manager
             self.last_reprojected_time_et = None
             self.last_interval_start_et = None
+
+        def get_filter(self, instrument_name: str) -> BaseFilter:
+            """
+            Get the filter object for the given instrument name.
+            """
+            return self.custom_filter_objects.get(instrument_name, self.filter)
+
+        def get_filter(self, instrument_name: Optional[str] = None) -> BaseFilter:
+            """
+            Get the filter object for the given instrument name.
+            """
+            return self.custom_filter_objects.get(instrument_name, self.filter)
 
         def setup(
             self,
@@ -76,12 +99,17 @@ class DataFetchingEngine:
             self.interval_manager = interval_manager
             self.supress_error_logs = supress_error_logs
             self.interactive_progress = interactive_progress
-            self._extraction_name = extraction_name
+            self._extraction_name = extraction_name if extraction_name else datetime.now().strftime("%Y%m%d_%H%M%S")
             self.extraction_name = f"{extraction_name}_{retry_count}"
 
-    def __init__(self, instruments: List[BaseInstrument], filter_object: BaseFilter, kernel_manager: BaseKernelManager):
-        self.extraction_state = self.ExtractionState(kernel_manager, instruments, filter_object)
-        self.instrument_states = {instr.name: self.InstrumentState(instr) for instr in instruments}
+    def __init__(
+        self,
+        instruments: List[BaseInstrument],
+        filter_object: BaseFilter,
+        kernel_manager: BaseKernelManager,
+        custom_filter_objects: Dict[str, BaseFilter] = {},
+    ):
+        self.extraction_state = self.ExtractionState(kernel_manager, instruments, filter_object, custom_filter_objects)
         self.threads = []
 
     def check_threads(self):
@@ -89,9 +117,9 @@ class DataFetchingEngine:
         for thread_id in range(len(self.threads) - 1, -1, -1):
             if self.threads[thread_id] is None:
                 self.threads.pop(thread_id)
-
             elif not self.threads[thread_id].is_alive():
                 self.threads[thread_id].join()
+                self.threads.pop(thread_id)
 
     def flush_SPICE(self):
         """
@@ -124,11 +152,15 @@ class DataFetchingEngine:
                 if self.extraction_state.kernel_manager.max_loaded_time
                 else None
             ),
-            "instruments": list(self.extraction_state.instruments.keys()),
-            "satellite_name": list(self.extraction_state.instruments.values())[0].satellite_name,
+            "instruments": [instrument.name for instrument in self.extraction_state.instruments],
+            "satellite_name": self.extraction_state.instruments[0].satellite_name,
             "filter_name": self.extraction_state.filter.name,
+            "extra_filters": {
+                _instrument: _filter.name
+                for _instrument, _filter in self.extraction_state.custom_filter_objects.items()
+            },
             "frame": self.extraction_state.kernel_manager.main_reference_frame,
-            "created_at": datetime.datetime.now(),
+            "created_at": datetime.now(),
             "finished": False,
         }
         return Sessions.prepare_extraction_metadata(simulation_metadata)
@@ -137,11 +169,10 @@ class DataFetchingEngine:
         for instr_state in self.instrument_states.values():
             if len(instr_state.data_done) > MONGO_UPLOAD_BATCH_SIZE:
                 # If we have more than MONGO_UPLOAD_BATCH_SIZE, we can push to MongoDB
-                thread = Sessions.start_background_batch_insert(instr_state.data_done)
+                thread = Sessions.start_background_batch_insert(instr_state.data_done, instr_state.data_collection)
                 instr_state.data_done = []
                 self.threads.append(thread)
         self.check_threads()
-
 
     def process_data(self):
 
@@ -160,19 +191,25 @@ class DataFetchingEngine:
             instrument_name, data_entry = dato
             try:
                 reprojected_data = self.data_connectors[instrument_name].process_data_entry(
-                    data_entry, self.instrument_states[instrument_name].instrument, self.extraction_state.filter
+                    data_entry,
+                    self.instrument_states[instrument_name].instrument,
+                    self.extraction_state.get_filter(instrument_name),
                 )
 
                 if reprojected_data:
                     self.instrument_states[instrument_name].data_done.append(reprojected_data)
+            except NotFoundError as e:
+                # This is to be expected
+                self.flush_SPICE()
             except Exception as e:
+                # import pdb; pdb.set_trace()
                 SPICELog.log_spice_exception(e, context=f"Error processing data entry for instrument {instrument_name}")
                 self.flush_SPICE()
 
     def setup_data_connectors(self) -> Dict[str, BaseDataConnector]:
         connectors = {}
         for name, interval_list in self.extraction_state.interval_manager.intervals.items():
-            connectors[name] = DATA_CONNECTOR_MAP[name](self.extraction_state.kernel_manager, interval_list)
+            connectors[name] = DATA_CONNECTOR_MAP[name](interval_list, self.extraction_state.kernel_manager)
         return connectors
 
     def start_extraction(
@@ -203,11 +240,16 @@ class DataFetchingEngine:
         )
 
         self.extraction_state.kernel_manager.step(self.extraction_state.start_time)
+
         self.data_connectors = self.setup_data_connectors()
+        self.instrument_states = {
+            instr.name: self.InstrumentState(instr, self.data_connectors[instr.name])
+            for instr in self.extraction_state.instruments
+        }
 
         # Do the mongo DB
         pbar = (
-            tqdm(total=len(self.extraction_state.interval_manager), disable=SUPRESS_TQDM, ncols=TQDM_NCOLS)
+            tqdm(total=len(self.extraction_state.interval_manager), disable=SUPRESS_TQDM, ncols=TQDM_NCOLS, desc="Processing Time Intervals")
             if interactive_progress
             else nullcontext()
         )
@@ -225,8 +267,10 @@ class DataFetchingEngine:
         SPICELog.supress_output = supress_error_logs
 
         self.data_collections = {
-            instr.name: Sessions.prepare_extraction_collections(instr.name, instr.timeseries, instr.indices)
-            for instr in self.extraction_state.instruments.values()
+            instr.name: Sessions.prepare_extraction_collections(
+                instr.name, self.data_connectors[instr.name].timeseries, self.data_connectors[instr.name].indices
+            )
+            for instr in self.extraction_state.instruments
         }
 
         # Iterate through the Interval Queu
@@ -236,8 +280,14 @@ class DataFetchingEngine:
                     instrument_interval_tuple = self.extraction_state.interval_manager.next_interval()
                     if instrument_interval_tuple is None:
                         break
+
                     instrument_name, interval = instrument_interval_tuple
                     self.last_interval_start_et = interval.start_et
+
+                    if interactive_progress:
+                        pbar.set_description(f"Processing interval {interval} for instrument {instrument_name}")
+                    else:
+                        logger.info(f"Processing interval {interval} for instrument {instrument_name}")
 
                     new_data = self.data_connectors[instrument_name].read_interval(interval)
                     if new_data:
@@ -275,7 +325,7 @@ class DataFetchingEngine:
             self.extraction_state.simulation_metadata_id,
             et2astropy_time(self.extraction_state.end_time).datetime,
             finished=True,
-            metadata={instr_state.name: instr_state.total_data for instr_state in self.instrument_states.values()},
+            metadata={instr_name: instr_state.total_data for instr_name, instr_state in self.instrument_states.items()},
         )
         self.threads.append(update_thread)
 
@@ -283,6 +333,4 @@ class DataFetchingEngine:
 
         if current_task is not None:
             # Update the task state to SUCCESS
-            current_task.update_state(
-                state="SUCCESS", meta={"result": "Task already finished, no computation to do."}
-            )
+            current_task.update_state(state="SUCCESS", meta={"result": "Task already finished, no computation to do."})

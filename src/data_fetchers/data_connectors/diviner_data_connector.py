@@ -18,14 +18,15 @@ import numpy as np
 from tqdm import tqdm
 from bs4 import BeautifulSoup as bs
 import spiceypy as spice
-from astropy.time import Time
+from astropy.time import Time, TimeDelta
 
 from src.structures import VirtualFile
 from src.structures import TimeInterval, IntervalList
 from src.data_fetchers.data_connectors.base_data_connector import BaseDataConnector
+from src.data_fetchers.config import DIVINER_BASE_URL, DIVINER_YEARLY_DATA_URLS
 from src.SPICE.config import LRO_INT_ID
-from src.SPICE.utils import NoDatetimeDecoder
-from src.global_config import SUPRESS_TQDM
+from src.SPICE.utils import DatetimeToETDecoder
+from src.global_config import SUPRESS_TQDM, TQDM_NCOLS
 from src.filters import BaseFilter
 from src.SPICE.instruments.instrument import BaseInstrument
 from src.structures import ProjectionPoint
@@ -34,33 +35,8 @@ from src.structures import ProjectionPoint
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-### Eventually check the website for updates, dynamic parsing is overkill in this instance
 
-DATA_START = Time("2009-07-05T16:50:26.195", format="isot", scale="utc")
-DATA_END = Time("2024-12-16T00:00:00.027", format="isot", scale="utc")
-
-YEARLY_DATA_URLS = {
-    2009: "https://pds-geosciences.wustl.edu/lro/lro-l-dlre-4-rdr-v1/lrodlr_1001/data/2009/",
-    2010: "https://pds-geosciences.wustl.edu/lro/lro-l-dlre-4-rdr-v1/lrodlr_1001/data/2010/",
-    2011: "https://pds-geosciences.wustl.edu/lro/lro-l-dlre-4-rdr-v1/lrodlr_1001/data/2011/",
-    2012: "https://pds-geosciences.wustl.edu/lro/lro-l-dlre-4-rdr-v1/lrodlr_1001/data/2012/",
-    2013: "https://pds-geosciences.wustl.edu/lro/lro-l-dlre-4-rdr-v1/lrodlr_1001/data/2013/",
-    2014: "https://pds-geosciences.wustl.edu/lro/lro-l-dlre-4-rdr-v1/lrodlr_1001/data/2014/",
-    2015: "https://pds-geosciences.wustl.edu/lro/lro-l-dlre-4-rdr-v1/lrodlr_1001/data/2015/",
-    2016: "https://pds-geosciences.wustl.edu/lro/lro-l-dlre-4-rdr-v1/lrodlr_1001/data/2016/",
-    2017: "https://pds-geosciences.wustl.edu/lro/lro-l-dlre-4-rdr-v1/lrodlr_1002/data/2017/",
-    2018: "https://pds-geosciences.wustl.edu/lro/lro-l-dlre-4-rdr-v1/lrodlr_1002/data/2018/",
-    2019: "https://pds-geosciences.wustl.edu/lro/lro-l-dlre-4-rdr-v1/lrodlr_1002/data/2019/",
-    2020: "https://pds-geosciences.wustl.edu/lro/lro-l-dlre-4-rdr-v1/lrodlr_1002/data/2020/",
-    2021: "https://pds-geosciences.wustl.edu/lro/lro-l-dlre-4-rdr-v1/lrodlr_1002/data/2021/",
-    2022: "https://pds-geosciences.wustl.edu/lro/lro-l-dlre-4-rdr-v1/lrodlr_1002/data/2022/",
-    2023: "https://pds-geosciences.wustl.edu/lro/lro-l-dlre-4-rdr-v1/lrodlr_1002/data/2023/",
-    2024: "https://pds-geosciences.wustl.edu/lro/lro-l-dlre-4-rdr-v1/lrodlr_1002/data/2024/",
-}
-
-BASE_URL = "https://pds-geosciences.wustl.edu"
-
-MAX_DATA_METADATA_PARALLEL_DOWNLOADS = 16
+compose_diviner_url = lambda path: urljoin(DIVINER_BASE_URL, path)
 
 dtypes = {
     "orbit": "int32",
@@ -84,12 +60,12 @@ dtypes = {
     "qmi": "int8",
 }
 
-
+astropy_time_units = ["year", "month", "day", "hour", "minute", "second"]
 
 
 class DivinerDataConnector(BaseDataConnector):
 
-    name = "DivinerRDR"
+    name = "DIVINER"
 
     timeseries = {
         "timeField": "et",
@@ -106,7 +82,7 @@ class DivinerDataConnector(BaseDataConnector):
         "csunazi",  # Solar azimuth
         "csunzen",  # Solar zenith
         "cemis",  # Emission angle
-        "cx_projected", # Projected coordinates
+        "cx_projected",  # Projected coordinates
         "cy_projected",
         "cz_projected",
         "meta._simulation_name",  # if you ever query by simulation name
@@ -125,7 +101,7 @@ class DivinerDataConnector(BaseDataConnector):
 
         tasks = []
         for current_year in range(min_year, max_year + 1):
-            url = urlparse(YEARLY_DATA_URLS[current_year])
+            url = urlparse(DIVINER_YEARLY_DATA_URLS[current_year])
             tasks.append((current_year, url, self.fetch_url_async(url.geturl())))
 
         month_urls: Dict[Tuple[int, int], str] = {}
@@ -136,7 +112,7 @@ class DivinerDataConnector(BaseDataConnector):
             for link in soup.find_all("a"):
                 href = link.get("href")
                 if href and href.startswith(url.path):
-                    month_urls[(year, int(href[-3:-1]))] = urljoin(BASE_URL, href)
+                    month_urls[(year, int(href[-3:-1]))] = compose_diviner_url(href)
 
         # Drop the months that are not in the time intervals
         for year, month in list(month_urls.keys()):
@@ -170,16 +146,20 @@ class DivinerDataConnector(BaseDataConnector):
 
         daily_urls: Dict[Tuple[int, int, int], str] = {}
 
-        for year, month, url, task in tasks:
+        for year, month, url, task in tqdm(
+            tasks, desc="DIVINER exploring Yearly URLs", disable=SUPRESS_TQDM, ncols=TQDM_NCOLS
+        ):
             response = task.result()
             soup = bs(response.text, "html.parser")
             for link in soup.find_all("a"):
                 href = link.get("href")
                 if href and href.startswith(url.path):
-                    daily_urls[(year, month, int(href[-3:-1]))] = urljoin(BASE_URL, href)
+                    daily_urls[(year, month, int(href[-3:-1]))] = compose_diviner_url(href)
 
         # Drop the days that are not in the time intervals
-        for year, month, day in list(daily_urls.keys()):
+        for year, month, day in tqdm(
+            list(daily_urls.keys()), desc="DIVINER fetching Yearly URLs", disable=SUPRESS_TQDM, ncols=TQDM_NCOLS
+        ):
             if year == min_time.datetime.year and month == min_time.datetime.month and day < min_time.datetime.day:
                 del daily_urls[(year, month, day)]
             elif year == max_time.datetime.year and month == max_time.datetime.month and day > max_time.datetime.day:
@@ -197,21 +177,21 @@ class DivinerDataConnector(BaseDataConnector):
         :return: List of URLs for each day
         """
         tasks = []
-        for (year, month, day), url in daily_urls.items():
+        for (year, month, day), url in tqdm(daily_urls.items(), desc="DIVINER exploring Daily URLs", disable=SUPRESS_TQDM, ncols=TQDM_NCOLS):
             url = urlparse(url)
             tasks.append((year, month, day, url, self.fetch_url_async(url.geturl())))
 
         minute_urls: Dict[Tuple[int, int, int, int, int], str] = defaultdict(dict)
 
-        for year, month, day, url, task in tasks:
+        for year, month, day, url, task in tqdm(tasks, desc="DIVINER fetching Daily URLs", disable=SUPRESS_TQDM, ncols=TQDM_NCOLS):
             response = task.result()
             soup = bs(response.text, "html.parser")
             for link in soup.find_all("a"):
                 href = link.get("href")
                 if href and href.startswith(url.path):
                     # Parse hours and minutes too, use file suffix as key to the other dict
-                    minute_urls[(year, month, day, int(href[-12:-10]), int(href[-10:-8]))][href[-3:].lower()] = urljoin(
-                        BASE_URL, href
+                    minute_urls[(year, month, day, int(href[-12:-10]), int(href[-10:-8]))][href[-3:].lower()] = (
+                        compose_diviner_url(href)
                     )
 
         logger.info(f"Found {len(minute_urls)} minute URLs")
@@ -227,14 +207,28 @@ class DivinerDataConnector(BaseDataConnector):
         daily_urls = self.discover_month_urls(min_time, max_time, month_urls)
         minute_urls = self.discover_day_urls(daily_urls)
 
+        # We obtain all the minute urls. Not to torture NAIF servers, we filter it further (with minute of tolerance to be inclusive)
+        minute_urls_of_interest = {}
+        for key, value in tqdm(list(minute_urls.items()), desc="DIVINER filtering minute URLs", disable=SUPRESS_TQDM, ncols=TQDM_NCOLS):
+            base_datefile_time_dict = {time_key: time_value for time_key, time_value in zip(astropy_time_units, key)}
+            base_datafile_timestamp = Time(base_datefile_time_dict, format="ymdhms", scale="utc")
+            base_datefile_timestamp_et = spice.utc2et(base_datafile_timestamp.iso)
+            # Subtract 60 seconds to be inclusive, will be enhanced with .lbl file data
+            base_datefile_timestamp_et_start = base_datefile_timestamp_et - 60
+            # Interval is expected to last 10 minutes, we add next 60 seconds to be strictly inclusive
+            base_datefile_timestamp_et_end = base_datefile_timestamp_et + 660
+            inclusive_time_interval = TimeInterval(base_datefile_timestamp_et_start, base_datefile_timestamp_et_end)
+            if time_intervals.get_intervals_intersection(inclusive_time_interval):
+                minute_urls_of_interest[key] = value
+
         lbl_tasks: List[Tuple[Dict[str, str], Future]] = []
-        for file_dict in minute_urls.values():
+        for file_dict in tqdm(list(minute_urls_of_interest.values()), desc="DIVINER exploring lbl metadata", disable=SUPRESS_TQDM, ncols=TQDM_NCOLS):
             lbl_tasks.append((file_dict, self.fetch_url_async(file_dict["lbl"])))
 
         virtual_files: List[VirtualFile] = []
-        for file_dict, fut in tqdm(lbl_tasks, desc="Downloading metadata", disable=SUPRESS_TQDM):
+        for file_dict, fut in tqdm(lbl_tasks, desc="Downloading DIVINER LBL metadata", disable=SUPRESS_TQDM, ncols=TQDM_NCOLS):
             resp = fut.result()
-            meta = pvl.loads(resp.text, decoder=NoDatetimeDecoder())
+            meta = pvl.loads(resp.text, decoder=DatetimeToETDecoder())
             interval = TimeInterval(meta["UNCOMPRESSED_FILE"]["START_TIME"], meta["UNCOMPRESSED_FILE"]["STOP_TIME"])
             virtual_files.append(VirtualFile(file_dict["zip"], interval, meta))
 

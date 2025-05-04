@@ -12,6 +12,8 @@ class BaseExtractionConfig:
     kernel_manager_kwargs = {}
     filter_type = None
     filter_kwargs = {}
+    # Is used when custom filter is needed for particular instrument for whatever reason
+    custom_filter_kwargs = {}
     interval_name = None
 
     def __init_subclass__(cls, **kwargs):
@@ -39,6 +41,7 @@ class BaseExtractionConfig:
                 "simulation_name": cls.experiment_name,
                 "kernel_manager_kwargs": cls.kernel_manager_kwargs,
                 "filter_kwargs": cls.filter_kwargs,
+                "custom_filter_kwargs": cls.custom_filter_kwargs,
             },
             "start_time": cls.start_time,
             "end_time": cls.end_time,

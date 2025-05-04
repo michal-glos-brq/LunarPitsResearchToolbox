@@ -34,3 +34,10 @@ class DIVINERTestExtractorConfig(BaseExtractionConfig):
         "hard_radius": 5, # Km
     }
 
+    custom_filter_kwargs = {
+        # We might want more from the radar instrument, because of it's penetrating nature
+        "MiniRF": {
+            "hard_radius": 20,
+        }
+    }
+

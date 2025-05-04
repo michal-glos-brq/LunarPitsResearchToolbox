@@ -118,7 +118,7 @@ class BaseInstrument(ABC):
                 [self.sub_instruments[0].transform_vector(self.frame, bnd, et) for bnd in self._static_bounds]
             ).reshape(-1, 3)
 
-    def project_vector(self, et, vector) -> np.array:
+    def project_vector(self, et, vector, use_ellipsoid: bool = False) -> np.array:
         """
         Projects a vector pointing from satellite_name, onto the lunar surface. Return intersection of surface and vector in cartesian coordinates
 
@@ -126,7 +126,7 @@ class BaseInstrument(ABC):
         """
         # https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/sincpt_c.html
         boresight_point, boresight_trgepc, spacecraft_relative = spice.sincpt(
-            "DSK/UNPRIORITIZED",
+            "ELLIPSOID" if use_ellipsoid else "DSK/UNPRIORITIZED",
             "MOON",
             et,  # Time (just a number, the astro time)
             LUNAR_FRAME,

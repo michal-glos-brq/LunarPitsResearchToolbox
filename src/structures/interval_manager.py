@@ -95,6 +95,11 @@ class TimeInterval:
 
 
 class IntervalList:
+    """
+    A sorted list of TimeInterval objects.
+    Provides methods to find overlapping intervals and to serialize/deserialize.
+    Work only for non-overlapping lists of intervals.
+    """
 
     def __init__(self, intervals: Union[List[TimeInterval], List[Tuple[float, float]]]):
         if not intervals:
@@ -205,9 +210,10 @@ class IntervalManager:
     Maintains active intervals for each instrument and provides a unified simulation time.
     """
 
-    def __init__(self, intervals: Dict[str, list[Tuple[float, float]]]):
+    def __init__(self, intervals: Dict[str, Union[list[Tuple[float, float]], IntervalList]]):
         self.intervals: Dict[str, IntervalList] = {
-            instrument_name: IntervalList(intervals) for instrument_name, intervals in intervals.items()
+            instrument_name: (intervals if isinstance(intervals, IntervalList) else IntervalList(intervals))
+            for instrument_name, intervals in intervals.items()
         }
         self.multi_queue = MultiIntervalQueue(self.intervals)
 

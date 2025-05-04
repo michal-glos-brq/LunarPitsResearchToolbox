@@ -5,7 +5,7 @@ services:
     ports:
       - "27017:27017"
     volumes:
-      - /media/mglos/HDD_8TB6/MONGO:/data/db
+      - /media/mglos/HDD_8TB7/MONGO:/data/db
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: password
@@ -18,7 +18,7 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - /media/mglos/HDD_8TB6/REDIS:/data
+      - /media/mglos/HDD_8TB7/REDIS:/data
     restart: always
     command: redis-server --save 60 1 --loglevel warning
 

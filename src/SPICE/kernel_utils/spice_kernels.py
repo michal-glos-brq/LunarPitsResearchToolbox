@@ -598,7 +598,7 @@ class DynamicKernelManager(ABC):
             pbar.update(1)
 
         try:
-            kernel_type = os.path.basename(os.path.dirname(self.filename))
+            kernel_type = self.filename.rsplit("/", 2)[1]
         except Exception as e:
             kernel_type = "SPICE"
 

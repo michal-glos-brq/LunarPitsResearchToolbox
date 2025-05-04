@@ -22,6 +22,7 @@ from src.global_config import LOG_LEVEL
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=LOG_LEVEL)
 
+
 def merge_intervals(
     timestamps: List[float], base_step: float, margin: float = 0.1, correction: float = 1.6
 ) -> List[Tuple[float, float]]:
@@ -72,7 +73,10 @@ def merge_intervals(
 
 
 def aggregate_simulation_intervals(
-    config_name: str, simulation_names: List[str], threshold: Optional[float] = None
+    config_name: str,
+    simulation_names: List[str],
+    threshold: Optional[float] = None,
+    requested_instruments: Optional[List[str]] = None,
 ) -> Dict[str, List[Tuple[float, float]]]:
     """
     Aggregates simulation point timestamps into merged time intervals for each instrument.
@@ -102,14 +106,20 @@ def aggregate_simulation_intervals(
     config = BaseSimulationConfig.get_config_dict(config_name)
     instrument_names = config["simulation_kwargs"]["instrument_names"]
 
-    # Build the filter ID/name using the filter mapping.
-    filter_obj_name = FILTER_MAP[config["simulation_kwargs"]["filter_type"]]._name(
-        **config["simulation_kwargs"]["filter_kwargs"]
-    )
+    if requested_instruments and not all(
+        [req_instrument in instrument_names for req_instrument in requested_instruments]
+    ):
+        raise ValueError(
+            f"Requested instruments {requested_instruments} are not part of the simulation configuration {config_name}."
+        )
+
+    if requested_instruments is not None:
+        instrument_names = [
+            instrument_name for instrument_name in instrument_names if instrument_name in requested_instruments
+        ]
 
     # Query simulation metadata documents. (Assuming this method is implemented accordingly.)
     simulation_tasks = Sessions.simulation_tasks_query(
-        filter_name=filter_obj_name,
         simulation_names=simulation_names,
         instrument_names=instrument_names,
     )
@@ -168,6 +178,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Merge simulation timestamps into time intervals.")
     parser.add_argument("--config-name", help="Name of the experiment config to use.", required=True)
     parser.add_argument("--sim-names", help="Names of the simulation runs to use, delimited by ','.", required=True)
+    parser.add_argument("--instruments", help="Names of instruments to use, delimited by ','.", required=False)
     parser.add_argument(
         "--interval-name",
         help="Name of the intervals to save for future extraction. This will be referrenced when assigning extraction tasks.",
@@ -183,5 +194,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     sim_names = list({name.strip() for name in args.sim_names.split(",")})
-    result = aggregate_simulation_intervals(args.config_name, sim_names, threshold=args.threshold)
+    result = aggregate_simulation_intervals(
+        args.config_name, sim_names, threshold=args.threshold, requested_instruments=args.instruments.split(",")
+    )
     Sessions.insert_simulation_intervals(sim_names, result, args.threshold, args.interval_name)

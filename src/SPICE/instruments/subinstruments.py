@@ -127,9 +127,6 @@ class MiniRFSubInstrument(ImplicitSubInstrument):
       - S-band: Beam width ~3.6° (across) x 10.8° (along)
       - X-band: Beam width ~1.2° (across) x 3.6° (along)
 
-    These are used here to define a rectangular FOV (via four corner vectors).
-    For simplicity, we assume that the nominal boresight is [0, 0, 1] in the
-    instrument frame, and that a small-angle linear approximation is acceptable.
     """
 
     def __init__(self, channel: str):
@@ -152,30 +149,52 @@ class MiniRFSubInstrument(ImplicitSubInstrument):
         half_across = np.radians(across_deg / 2.0)
         half_along = np.radians(along_deg / 2.0)
 
-        # We need two orthogonal directions in the instrument's tangent plane.
-        # For simplicity, we assume a default "right" vector and "down" vector.
-        # These choices are arbitrary for an implicit definition.
-        right = np.array([1.0, 0.0, 0.0])
-        down = np.array([0.0, -1.0, 0.0])
+        # rotation about X
+        def rot_x(theta):
+            c, s = np.cos(theta), np.sin(theta)
+            return np.array([
+                [1,  0,  0],
+                [0,  c, -s],
+                [0,  s,  c],
+            ])
 
-        # Compute approximate corner vectors in the instrument frame.
-        # For small angles, the perturbed direction can be approximated as:
-        #  boresight + (half_across)*right + (half_along)*down,
-        # and similarly for the other three corners.
-        corner1 = boresight + half_across * right + half_along * down
-        corner2 = boresight - half_across * right + half_along * down
-        corner3 = boresight - half_across * right - half_along * down
-        corner4 = boresight + half_across * right - half_along * down
-        corner1 /= np.linalg.norm(corner1)
-        corner2 /= np.linalg.norm(corner2)
-        corner3 /= np.linalg.norm(corner3)
-        corner4 /= np.linalg.norm(corner4)
-        bounds = np.array([corner1, corner2, corner3, corner4])
+        # rotation about Y
+        def rot_y(theta):
+            c, s = np.cos(theta), np.sin(theta)
+            return np.array([
+                [ c, 0,  s],
+                [ 0, 1,  0],
+                [-s, 0,  c],
+            ])
 
-        # Now call the ImplicitSubInstrument initializer.
-        # (ImplicitSubInstrument expects: _id, frame, boresight, bounds, transform_frame)
-        # Here we assume that no additional transformation is required.
-        super().__init__(f"minirf-{channel}", frame, boresight=boresight, bounds=bounds)
+        # build the four corners: (+across,+along), (-across,+along), (-across,-along), (+across,-along)
+        corners = []
+        for sign_x, sign_y in [(+1,+1), (-1,+1), (-1,-1), (+1,-1)]:
+            # first rotate boresight by sign_x * half_across about Y,
+            # then by sign_y * half_along about X
+            R = rot_x(sign_y * half_along) @ rot_y(sign_x * half_across)
+            corners.append(R @ boresight)
 
-        # Store the channel information for later reference.
-        self.channel = channel
+        bounds = np.vstack(corners)  # shape (4,3), already unit-length
+
+        left_bound  = rot_x(-half_along) @ boresight
+        right_bound = rot_x(+half_along) @ boresight
+        self.line_bounds = np.vstack([left_bound, right_bound])  # shape (2,3)
+
+
+        # hand off to the base class
+        super().__init__(f"minirf-{channel}", frame,
+                         boresight=boresight,
+                         bounds=bounds)
+
+        self.channel = channel.upper()
+
+    def look_vector_for_pixel(self, pixel_index: int, pixel_count: int) -> np.ndarray:
+        """
+        Returns the unit look-vector (instrument frame) for a given pixel
+        by linearly interpolating between left and right line_bounds.
+        """
+        frac = (pixel_index + 0.5) / pixel_count
+        vec  = (1.0 - frac) * self.line_bounds[0] + frac * self.line_bounds[1]
+        return vec / np.linalg.norm(vec)
+

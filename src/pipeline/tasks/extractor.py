@@ -50,6 +50,7 @@ def run_data_extraction(
     time_interval_manager_json: Dict,
     simulation_name: Optional[str] = None,
     retry_count: Optional[int] = None,
+    custom_filter_kwargs: Dict = {},
 ) -> Dict:
     """
     Split [start, end) by et_splits and run extraction on each sub‐interval.
@@ -60,7 +61,7 @@ def run_data_extraction(
         f"Received args: start_time_isot={start_time_isot}, end_time_isot={end_time_isot}, "
         f"instrument_names={instrument_names}, kernel_manager_type={kernel_manager_type}, "
         f"kernel_manager_kwargs={kernel_manager_kwargs}, filter_kwargs={filter_kwargs}, "
-        f"filter_type={filter_type}, simulation_name={simulation_name}"
+        f"filter_type={filter_type}, simulation_name={simulation_name}; custom_filter_kwargs={custom_filter_kwargs}"
     )
 
     try:
@@ -87,9 +88,13 @@ def run_data_extraction(
     kernel_manager.activate(start_time)
 
     filter_obj = FILTER_MAP[filter_type].from_kwargs_and_kernel_manager(kernel_manager, **filter_kwargs)
+    custom_filter_objects = {
+        name: FILTER_MAP[filter_type].from_kwargs_and_kernel_manager(kernel_manager, **kwargs)
+        for name, kwargs in custom_filter_kwargs.items()
+    }
     instruments = [INSTRUMENT_MAP[name]() for name in instrument_names]
 
-    extractor = DataFetchingEngine(instruments, filter_obj, kernel_manager)
+    extractor = DataFetchingEngine(instruments, filter_obj, kernel_manager, custom_filter_objects)
 
     try:
         extractor.start_extraction(

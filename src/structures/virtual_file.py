@@ -1,12 +1,15 @@
+import os
 import requests
 import threading
 import logging
 import time
+from datetime import datetime
 from typing import Optional, Dict
 
 from io import BytesIO
 
 from .interval_manager import TimeInterval
+from ..global_config import SAVE_DATAFILES_TO_RAM, HDD_BASE_PATH
 
 MAX_RETRIES = 128
 DOWNLOAD_TIMEOUT = 60 * 60 * 2 # 2 hours
@@ -14,6 +17,9 @@ DOWNLOAD_CHUNK_SIZE = 8 * 1024 # 8 KB
 
 
 logger = logging.getLogger(__name__)
+
+DATAFILES_TMP_DESTINATION = os.path.join(HDD_BASE_PATH, "data_tmp")
+os.makedirs(DATAFILES_TMP_DESTINATION, exist_ok=True)
 
 
 class VirtualFile:
@@ -26,23 +32,43 @@ class VirtualFile:
         self.metadata = metadata
         self.url = url
         self.interval = time_interval
-        self.file = BytesIO()
-        self.data = None
         self._thread = None
-        # Thread-safe flag
         self._done = threading.Event()
+        self.corrupted = False
+        self.data = None
+
+        # initialize buffer or file handle
+        self._make_file_handle()
+
+
+    def _make_file_handle(self):
+        """Create either a BytesIO or a real file on disk with a hashed name."""
+        if SAVE_DATAFILES_TO_RAM:
+            self.file_path = None
+            self.file = BytesIO()
+        else:
+            name = f"{datetime.now().isoformat()}_{os.getpid()}".replace(":", "-").replace(".", "-")
+            path = os.path.join(DATAFILES_TMP_DESTINATION, name)
+            self.file_path = path
+            # open for write+binary, truncate if exists
+            self.file = open(path, "w+b")
+
 
     def _download_worker(self):
         """
         Download the file in a separate thread, with resume support and retries.
         """
         def _reset_buffer():
-            """Drop the partial download and start over."""
             try:
+                # close current handle
                 self.file.close()
+                # if on-disk, remove the partial file
+                if not SAVE_DATAFILES_TO_RAM and self.file_path and os.path.exists(self.file_path):
+                    os.remove(self.file_path)
             except Exception:
                 pass
-            self.file = BytesIO()
+            # create a brand-new handle (in RAM or on disk)
+            self._make_file_handle()
 
         retries = 0
         self.corrupted = False
@@ -151,14 +177,22 @@ class VirtualFile:
     def unload(self):
         """Unload the file content."""
         logger.info(f"Unloading {self.url}")
+
+        # Clean the thread
         if self._thread:
             self._done.wait()  # Wait in case we still download
             del self._thread
             self._thread = None
+        # Clean the file
         if self.file:
             self.file.close()
             del self.file
-            self.file = BytesIO()
+            if not SAVE_DATAFILES_TO_RAM:
+                if os.path.exists(self.file_path):
+                    os.remove(self.file_path)
+            self._make_file_handle()
+
+        # Clean the buffer
         if self.data is not None:
             del self.data
             self.data = None
@@ -172,3 +206,20 @@ class VirtualFile:
         """Block until download is finished."""
         self._done.wait(timeout=timeout)
         self.assert_download_ok()
+
+    def __repr__(self):
+        if self._thread is None:
+            status = "not started"
+        elif self.is_done():
+            status = "done"
+        else:
+            status = "downloading"
+
+        corrupted = " (CORRUPTED)" if getattr(self, "corrupted", False) else ""
+        size = self.file.tell() if hasattr(self, "file") and self.file else 0
+        return (
+            f"<VirtualFile url='{self.url}' "
+            f"interval={self.interval} "
+            f"status={status}{corrupted} "
+            f"size={size}B>"
+        )

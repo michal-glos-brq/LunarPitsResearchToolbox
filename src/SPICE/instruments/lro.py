@@ -71,6 +71,15 @@ class MiniRFInstrument(BaseInstrument):
 
     _sub_instruments = None
 
+
+    @property
+    def x(self):
+        return self.sub_instruments[0]
+
+    @property
+    def s(self):
+        return self.sub_instruments[1]
+
     @property
     def sub_instruments(self):
         if self._sub_instruments is None:

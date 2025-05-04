@@ -341,15 +341,12 @@ class Sessions:
         session[SIMULATION_METADATA_COLLECTION].update_one({"_id": metadata_id}, {"$set": update_fields})
 
     @staticmethod
-    def simulation_tasks_query(
-        filter_name: str, simulation_names: List[str], instrument_names: List[str]
-    ) -> List[dict]:
+    def simulation_tasks_query(simulation_names: List[str], instrument_names: List[str]) -> List[dict]:
         """
         Queries the simulation metadata collection for tasks that match the specified filter_name,
         simulation_name, and list of instrument_names. The results are sorted by the "start_time" field.
 
         Parameters:
-          - filter_name (str): The name of the filter used in the simulation.
           - simulation_names (List[str]): The experiment/simulation names. Can be aggregated to run data extraction once only
           - instrument_names (list[str]): List of instrument names (must be an exact unordered match).
 
@@ -363,11 +360,12 @@ class Sessions:
 
         # Build the query.
         query = {
-            "filter_name": filter_name,
             "finished": True,  # Optionally query only finished simulations.
             "instruments": {
                 "$all": instrument_names,
-                "$size": len(instrument_names),
+                # We want to be able to restrict the instruments we calculate the intervals for
+                # Some instruments are redundant and some instruments can have different data fetching filters
+                # "$size": len(instrument_names),
             },
         }
         query["simulation_name"] = {"$in": simulation_names} if len(simulation_names) != 1 else simulation_names[0]
@@ -509,12 +507,15 @@ class Sessions:
         # Query matching:
         # - "instruments": {"$all": [...], "$size": n} makes sure that the document's instruments array contains
         #   all the provided elements (regardless of order) and that its length matches exactly.
+        # We query only exactly the same tasks to not repeat those, there might be small tweaks to the state, which would
+        # esentially be the same extraction run, but would not be obtained by this query
         query = {
-            "simulation_name": extraction_metadata["simulation_name"],
+            "extraction_name": extraction_metadata["extraction_name"],
             "start_time": extraction_metadata["start_time"],
             "end_time": extraction_metadata["end_time"],
             "filter_name": extraction_metadata["filter_name"],
-            "base_step": extraction_metadata["base_step"],
+            "extra_filters": extraction_metadata["extra_filters"],
+            "frame": extraction_metadata["frame"],
             "finished": True,
             "instruments": {
                 "$all": extraction_metadata["instruments"],

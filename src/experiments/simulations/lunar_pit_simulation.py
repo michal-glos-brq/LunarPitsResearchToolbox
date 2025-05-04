@@ -13,8 +13,15 @@ class LunarPitAtlasMappingLROConfig(BaseSimulationConfig):
     Run to aggregate: ./src/manual_scripts/aggregate_simulation_intervals.py \
                             --config-name lunar_pit_atlas_mapping_LRO_simulation \
                             --sim-name lunar_pit_run \
-                            --interval-name test_full_run \
+                            --instruments DIVINER,LOLA \
+                            --interval-name lunar_pit_run \
                             --threshold 5
+    Run to aggregate (radar data): ./src/manual_scripts/aggregate_simulation_intervals.py \
+                            --config-name lunar_pit_atlas_mapping_LRO_simulation \
+                            --sim-name lunar_pit_run \
+                            --instruments MiniRF \
+                            --interval-name lunar_pit_run \
+                            --threshold 20
     """
     experiment_name = "lunar_pit_atlas_mapping_LRO_simulation"
 
