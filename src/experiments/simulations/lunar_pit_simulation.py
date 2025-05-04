@@ -29,8 +29,8 @@ class LunarPitAtlasMappingLROConfig(BaseSimulationConfig):
         "DIVINER",
         "LOLA",
         "MiniRF",
-        "LROC_WAC",
-        "LROC_NAC",
+        # "LROC_WAC",
+        # "LROC_NAC",
     ]
 
     kernel_manager_type = "LRO"
