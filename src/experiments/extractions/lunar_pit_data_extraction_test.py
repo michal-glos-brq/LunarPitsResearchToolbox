@@ -1,30 +1,31 @@
 from .base_extraction_experiment import BaseExtractionConfig
 
-from astropy.time import Time
+from astropy.time import Time, TimeDelta
 
 
-class DIVINERExtractorConfig(BaseExtractionConfig):
+class DIVINERTestExtractorConfig(BaseExtractionConfig):
     """
     Run example: ./src/manual_scripts/assign_tasks.py \
-                    --config-name lunar_pit_extraction_full \
-                    --name lunar_pit_extraction_full \
+                    --config-name lunar_pit_extraction_test \
+                    --name lunar_pit_extraction_test \
                     --task extraction \
                     --dry-run 
     """
 
-    experiment_name = "lunar_pit_extraction_full"
+    experiment_name = "lunar_pit_extraction_test"
 
     instrument_names = [
         "DIVINER",
         "LOLA",
-        "MiniRF",
+        # "MiniRF", Well, this thingy can get stuck on 3 GB + files, which is 60 DIVINER files
+        # for just running tasks for testing purposes it's irrelevant
     ]
     # Here we 100 % define the time intervals for data fetching
     interval_name = "lunar_pit_run"
     kernel_manager_type = "LRO"
 
     start_time = Time("2009-07-05T00:00:00.000", format="isot", scale="utc")
-    end_time = Time("2024-12-15T00:00:00.000", format="isot", scale="utc")
+    end_time = start_time + TimeDelta(45, format="jd")
     step_days = 1
 
     kernel_manager_kwargs = {
@@ -44,6 +45,6 @@ class DIVINERExtractorConfig(BaseExtractionConfig):
 
     custom_filter_kwargs = {
         "MiniRF": {
-            "hard_radius": 10,
+            "hard_radius": 5,
         }
     }

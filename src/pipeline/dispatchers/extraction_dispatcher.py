@@ -65,10 +65,6 @@ class ExtractorTaskRunner(BaseTaskRunner):
             f"Submitting tasks for extraction: {config['experiment_name']}; run {name}; intervals: {config['interval_name']}"
         )
 
-        import pdb
-
-        pdb.set_trace()
-
         for _interval_manager in interval_managers:
 
             if not _interval_manager:

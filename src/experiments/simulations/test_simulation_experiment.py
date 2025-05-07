@@ -1,6 +1,6 @@
 from astropy.time import Time
 
-from .base_simulation_config import BaseSimulationConfig
+from .base_simulation_experiment import BaseSimulationConfig
 
 
 class TestLROShortSimulationConfig(BaseSimulationConfig):

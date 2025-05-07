@@ -3,6 +3,7 @@ from contextlib import nullcontext
 from typing import Dict, List, Optional
 from datetime import datetime
 import traceback
+import time
 
 from bson import ObjectId
 from astropy.time import Time
@@ -21,7 +22,7 @@ from src.data_fetchers.data_connectors.lola_data_connector import LOLADataConnec
 from src.data_fetchers.data_connectors.mini_rf_data_connector import MiniRFDataConnector
 from src.filters import BaseFilter
 from src.db.interface import Sessions
-from src.data_fetchers.config import MONGO_UPLOAD_BATCH_SIZE
+from src.data_fetchers.config import MONGO_UPLOAD_BATCH_SIZE, EXTR_STATE_DUMP_INTERVAL
 from src.global_config import SUPRESS_TQDM, TQDM_NCOLS, SUPRESS_TRACEBACKS
 from src.SPICE.utils import et2astropy_time
 
@@ -59,7 +60,28 @@ class DataFetchingEngine:
             self.total_intervals = len(instrument_connector.remote_files)
             self.processed_intervals = 0
 
-
+        def status_line(self) -> str:
+            """
+            Return a single-line summary of this instrument's state,
+            formatted to fit within ~120 characters.
+            """
+            tpl = (
+                "{name:<20}"
+                " data={data:>6}"
+                " reproj={rp:>6}"
+                " rej={rrej:>6}"
+                " exc={exc:>6}"
+                " intervals={proc:>3}/{tot:<3}"
+            )
+            return tpl.format(
+                name=self.instrument.name[:20],
+                data=self.total_data,
+                rp=self.total_reprojected_data,
+                rrej=self.reprojected_rejected_total,
+                exc=self.exception_rejected_total,
+                proc=self.processed_intervals,
+                tot=self.total_intervals,
+            )
 
     class ExtractionState:
         def __init__(
@@ -116,6 +138,13 @@ class DataFetchingEngine:
     ):
         self.extraction_state = self.ExtractionState(kernel_manager, instruments, filter_object, custom_filter_objects)
         self.threads = []
+
+    def maybe_log_extraction_state(self):
+        if self.real_time_checkpoint + EXTR_STATE_DUMP_INTERVAL < time.time():
+            logger.info(f"Running for {time.time() - self.real_time_start:.2f} seconds")
+            self.real_time_checkpoint = time.time()
+            for instrument_state in self.instrument_states.values():
+                logger.info(instrument_state.status_line())
 
     def check_threads(self):
         # Iterate in reverse to safely pop finished threads.
@@ -223,6 +252,8 @@ class DataFetchingEngine:
                 else:
                     self.instrument_states[instrument_name].reprojected_rejected_total += 1
 
+                self.maybe_log_extraction_state()
+
             except NotFoundError as e:
                 # This is to be expected
                 self.flush_SPICE()
@@ -259,6 +290,9 @@ class DataFetchingEngine:
         """
         Start the data extraction process. The main loop, controlling other components
         """
+        self.real_time_checkpoint = time.time()
+        self.real_time_start = self.real_time_checkpoint
+
         self.extraction_state.instruments = [
             instrument
             for instrument in self.extraction_state.instruments
@@ -348,6 +382,10 @@ class DataFetchingEngine:
                         self.instrument_states[instrument_name].instrument,
                         self.extraction_state.get_filter(instrument_name),
                     )
+
+                    # Maybe dump some info about how it's going
+                    self.maybe_log_extraction_state()
+
                     if new_data:
                         logger.info(
                             f"Instrument {instrument_name} has {len(new_data)} data points in interval {interval}"
