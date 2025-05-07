@@ -428,7 +428,6 @@ class DataFetchingEngine:
                 thread.join()
 
         Sessions.process_failed_inserts()
-        import pdb; pdb.set_trace()
         update_thread = Sessions.start_background_update_extraction_metadata(
             self.extraction_state.simulation_metadata_id,
             self.extraction_state.end_time.datetime,
