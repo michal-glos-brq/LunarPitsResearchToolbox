@@ -548,8 +548,8 @@ class Sessions:
             update_fields["finished"] = finished
         if metadata is not None:
             update_fields["metadata"] = metadata
-        session = Sessions.get_db_session(SIMULATION_DB_NAME)
-        session[SIMULATION_METADATA_COLLECTION].update_one({"_id": metadata_id}, {"$set": update_fields})
+        session = Sessions.get_db_session(EXTRACTOR_DB_NAME)
+        session[EXTRACTOR_METADATA_COLLECTION].update_one({"_id": metadata_id}, {"$set": update_fields})
 
     @staticmethod
     def remove_potentail_data_from_failed_task_runs(start_et: float, end_et: float, extraction_name: str, collection):

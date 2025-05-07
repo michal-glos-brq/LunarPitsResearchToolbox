@@ -198,6 +198,7 @@ class DataFetchingEngine:
             },
             "frame": self.extraction_state.kernel_manager.main_reference_frame,
             "created_at": datetime.now(),
+            "last_logged_time": datetime.now(),
             "finished": False,
         }
         return Sessions.prepare_extraction_metadata(simulation_metadata)
@@ -427,12 +428,17 @@ class DataFetchingEngine:
                 thread.join()
 
         Sessions.process_failed_inserts()
-
+        import pdb; pdb.set_trace()
         update_thread = Sessions.start_background_update_extraction_metadata(
             self.extraction_state.simulation_metadata_id,
             self.extraction_state.end_time.datetime,
             finished=True,
-            metadata={instr_name: instr_state.total_data for instr_name, instr_state in self.instrument_states.items()},
+            metadata={instr_name: {
+                "total_data": instr_state.total_data,
+                "total_reprojected_data": instr_state.total_reprojected_data,
+                "reprojected_rejected_total": instr_state.reprojected_rejected_total,
+                "exception_rejected_total": instr_state.exception_rejected_total,
+            } for instr_name, instr_state in self.instrument_states.items()},
         )
         self.threads.append(update_thread)
 
