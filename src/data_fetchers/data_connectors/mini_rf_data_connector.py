@@ -250,7 +250,6 @@ class MiniRFDataConnector(BaseDataConnector):
         self, time_interval: TimeInterval, instrument: BaseInstrument, filter_obj: BaseFilter
     ) -> List[Dict]:
         """Obtain data for the given time interval from the current file. To avoid returning too much data, prefilter the data with preevaluation metrics"""
-        import pdb; pdb.set_trace()
         if self.current_file is None:
             return []
 

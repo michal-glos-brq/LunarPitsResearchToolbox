@@ -56,6 +56,10 @@ class DataFetchingEngine:
             self.total_reprojected_data = 0
             self.reprojected_rejected_total = 0
             self.exception_rejected_total = 0
+            self.total_intervals = len(instrument_connector.remote_files)
+            self.processed_intervals = 0
+
+
 
     class ExtractionState:
         def __init__(
@@ -216,12 +220,23 @@ class DataFetchingEngine:
                         self.instrument_states[instrument_name].reprojected_data = []
                         self.threads.append(thread)
 
+                else:
+                    self.instrument_states[instrument_name].reprojected_rejected_total += 1
+
             except NotFoundError as e:
                 # This is to be expected
                 self.flush_SPICE()
+                self.instrument_states[instrument_name].exception_rejected_total += 1
+                if not SUPRESS_TRACEBACKS:
+                    trace_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+                    logger.error(f"Exception occurred:\n{trace_str}")
             except Exception as e:
                 SPICELog.log_spice_exception(e, context=f"Error processing data entry for instrument {instrument_name}")
                 self.flush_SPICE()
+                self.instrument_states[instrument_name].exception_rejected_total += 1
+                if not SUPRESS_TRACEBACKS:
+                    trace_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+                    logger.error(f"Exception occurred:\n{trace_str}")
 
     def setup_data_connectors(self) -> Dict[str, BaseDataConnector]:
         connectors = {}
@@ -353,7 +368,7 @@ class DataFetchingEngine:
                     self.flush_SPICE()
                 finally:
                     # If None, it's finished, and still wants to step this pbar, crashing the pbar
-                    if not instrument_interval_tuple is None:
+                    if not instrument_interval_tuple is None and interactive_progress:
                         pbar.update(1)
 
         # Set to infinity so all the remaining data would be processed

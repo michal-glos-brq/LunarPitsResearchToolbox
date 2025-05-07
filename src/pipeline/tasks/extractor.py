@@ -121,4 +121,5 @@ def run_data_extraction(
         raise e
     finally:
         kernel_manager.unload_all()
-        return {"status": "success"}
+
+    return {"status": "success"}
