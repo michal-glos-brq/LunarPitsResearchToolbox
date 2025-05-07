@@ -535,7 +535,7 @@ class Sessions:
         Spawns a background thread to update the simulation metadata document.
         """
         thread = threading.Thread(
-            target=Sessions.update_simulation_metadata, args=(metadata_id, current_time_datetime, finished, metadata)
+            target=Sessions.update_extraction_metadata, args=(metadata_id, current_time_datetime, finished, metadata)
         )
         thread.daemon = True
         thread.start()
