@@ -5,19 +5,29 @@ from astropy.time import Time
 
 
 class DIVINERTestExtractorConfig(BaseExtractionConfig):
+    """
+    Run example: ./src/manual_scripts/assign_tasks.py \
+                    --config-name lunar_pit_extraction \
+                    --name lunar_pit_extraction \
+                    --task extraction \
+                    --dry-run 
+    """
 
-    experiment_name = "diviner_extractor"
+
+    experiment_name = "lunar_pit_extraction"
 
     instrument_names = [
         "DIVINER",
+        "LOLA",
+        "MiniRF",
     ]
     # Here we 100 % define the time intervals for data fetching
-    interval_name = "test_lunar_pit_run"
+    interval_name = "lunar_pit_run"
     kernel_manager_type = "LRO"
 
-    start_time = Time("2009-07-05T16:50:24.211", format="isot", scale="utc")
+    start_time = Time("2009-07-05T00:00:00.000", format="isot", scale="utc")
     end_time = Time("2024-12-15T00:00:00.000", format="isot", scale="utc")
-    step_days = 14
+    step_days = 1
 
     kernel_manager_kwargs = {
         "frame": "MOON_PA_DE440",
@@ -35,9 +45,8 @@ class DIVINERTestExtractorConfig(BaseExtractionConfig):
     }
 
     custom_filter_kwargs = {
-        # We might want more from the radar instrument, because of it's penetrating nature
         "MiniRF": {
-            "hard_radius": 20,
+            "hard_radius": 10,
         }
     }
 

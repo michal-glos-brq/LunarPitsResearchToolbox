@@ -61,7 +61,7 @@ def main():
     parser.add_argument(
         "--task",
         choices=TASK_CLASSES.keys(),
-        help="Type of task to run (currently only 'remote_sensing' is supported).",
+        help="Type of task to run (extraction, remote_sensing).",
     )
     parser.add_argument("--config-name", help="Name of the experiment config to use.")
     parser.add_argument(
@@ -83,4 +83,8 @@ def main():
 
 
 if __name__ == "__main__":
+
+    from src.global_config import setup_logging
+    setup_logging()
+
     main()

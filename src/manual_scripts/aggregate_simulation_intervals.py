@@ -15,7 +15,6 @@ from tqdm import tqdm
 
 from src.db.interface import Sessions
 from src.experiments.simulations.lunar_pit_simulation import BaseSimulationConfig
-from src.filters import FILTER_MAP
 from src.global_config import TQDM_NCOLS
 from src.global_config import LOG_LEVEL
 
@@ -175,6 +174,10 @@ def aggregate_simulation_intervals(
 
 
 if __name__ == "__main__":
+
+    from src.global_config import setup_logging
+    setup_logging()
+
     parser = argparse.ArgumentParser(description="Merge simulation timestamps into time intervals.")
     parser.add_argument("--config-name", help="Name of the experiment config to use.", required=True)
     parser.add_argument("--sim-names", help="Names of the simulation runs to use, delimited by ','.", required=True)

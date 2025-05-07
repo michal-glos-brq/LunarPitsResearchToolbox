@@ -18,6 +18,7 @@ from src.SPICE.instruments.lro import (
 from src.SPICE.instruments.grail import GrailAInstrument, GrailBInstrument
 from src.structures import IntervalManager
 from src.data_fetchers.data_extractor import DataFetchingEngine
+from src.global_config import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -48,25 +49,29 @@ def run_data_extraction(
     kernel_manager_kwargs: Dict,
     filter_kwargs: Dict,
     time_interval_manager_json: Dict,
-    simulation_name: Optional[str] = None,
+    extraction_name: Optional[str] = None,
     retry_count: Optional[int] = None,
     custom_filter_kwargs: Dict = {},
+    **kwargs,
 ) -> Dict:
     """
     Split [start, end) by et_splits and run extraction on each sub‐interval.
 
     Returns a summary dict with 'status' and number of chunks processed.
     """
+    # Setup the logging in case TQDM is not supressed, though with celery task, it should be so in every case
+    setup_logging()
+
     logger.info(
         f"Received args: start_time_isot={start_time_isot}, end_time_isot={end_time_isot}, "
         f"instrument_names={instrument_names}, kernel_manager_type={kernel_manager_type}, "
         f"kernel_manager_kwargs={kernel_manager_kwargs}, filter_kwargs={filter_kwargs}, "
-        f"filter_type={filter_type}, simulation_name={simulation_name}; custom_filter_kwargs={custom_filter_kwargs}"
+        f"filter_type={filter_type}, extraction_name={extraction_name}; custom_filter_kwargs={custom_filter_kwargs}"
     )
 
     try:
-        start_time = Time(start_time_isot, format="iso", scale="utc")
-        end_time = Time(end_time_isot, format="iso", scale="utc")
+        start_time = Time(start_time_isot, format="isot", scale="utc")
+        end_time = Time(end_time_isot, format="isot", scale="utc")
     except Exception as e:
         raise ValueError(f"Invalid Time inputs: {e}")
 
@@ -103,12 +108,13 @@ def run_data_extraction(
             end_time=end_time,
             current_task=self,
             interactive_progress=False,
-            simulation_name=simulation_name,
+            extraction_name=extraction_name,
             supress_error_logs=True,
             task_group_id=str(uuid.uuid4()),
             retry_count=retry_count,
         )
     except Exception as e:
+        import pdb; pdb.set_trace()
         logger.error(f"Error during extraction: {e}")
         if self:
             self.update_state(state="FAILURE", meta={"error": str(e)})

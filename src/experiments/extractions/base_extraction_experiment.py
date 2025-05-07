@@ -43,6 +43,9 @@ class BaseExtractionConfig:
                 "filter_kwargs": cls.filter_kwargs,
                 "custom_filter_kwargs": cls.custom_filter_kwargs,
             },
+            # Collecting intervals with this name
+            "interval_name": cls.interval_name,
+            "experiment_name": cls.experiment_name,
             "start_time": cls.start_time,
             "end_time": cls.end_time,
             "step_days": cls.step_days,

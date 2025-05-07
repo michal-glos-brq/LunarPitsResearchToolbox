@@ -7,7 +7,8 @@ from pathlib import Path
 from collections import defaultdict
 from typing import List, Dict, Optional
 from time import sleep
-from tqdm import tqdm
+from itertools import product, chain
+
 
 from filelock import FileLock
 import pandas as pd
@@ -29,6 +30,7 @@ from src.SPICE.utils import DatetimeToETDecoder
 from src.global_config import SUPRESS_TQDM, TQDM_NCOLS
 from src.filters import BaseFilter
 from src.SPICE.instruments.instrument import BaseInstrument
+from src.SPICE.kernel_utils.kernel_management import BaseKernelManager
 
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,9 @@ logger.setLevel(logging.INFO)
 
 minirf_url = lambda url: urllib.parse.urljoin(MINIRF_BASE_URL, url)
 pickle_file = os.path.join(Path(__file__).resolve().parent, MINNIRF_REMOTE_CACHE_FILE)
+
+
+SUBDIVISION_MIN_SIDE_LEN = 4
 
 
 class MiniRFDataConnector(BaseDataConnector):
@@ -50,6 +55,14 @@ class MiniRFDataConnector(BaseDataConnector):
     }
 
     indices = ["meta.et", "meta.extraction_name", "cx_projected", "cy_projected", "cz_projected"]
+
+    def __init__(
+        self,
+        time_intervals: IntervalList,
+        kernel_manager: BaseKernelManager,
+    ):
+        super().__init__(time_intervals, kernel_manager)
+        self.cache = None
 
     @property
     def dataset_structure(self):
@@ -66,14 +79,16 @@ class MiniRFDataConnector(BaseDataConnector):
                 data_structure = sorted(data_structure, key=lambda x: TimeInterval(*x["interval"]))
                 return data_structure
 
-            logger.warning(f"Pickle file {pickle_file} not found. Fetching data from PDS servers. This might take an hour, easily even more ...")
+            logger.warning(
+                f"Pickle file {pickle_file} not found. Fetching data from PDS servers. This might take an hour, easily even more ..."
+            )
 
             import requests_cache
 
             requests_cache.install_cache(
                 cache_name="mini_rf_dataset_cache",
-                backend="sqlite",
-                expire_after=3600 * 12,  # 12 hours
+                backend="sqlite",  # SQLite can throw errors when accessed from multiple threads
+                expire_after=3600 * 12,  # 12 hours, well why not, sometimes the servers are quite hostile
             )
 
             # Fetch data addresses
@@ -132,7 +147,11 @@ class MiniRFDataConnector(BaseDataConnector):
                     sleep(500)
                     continue
 
-            for url_suffix in tqdm(remote_data_structure, desc="Parsind PD3 labels ...", ncols=TQDM_NCOLS, ):
+            for url_suffix in tqdm(
+                remote_data_structure,
+                desc="Parsind PD3 labels ...",
+                ncols=TQDM_NCOLS,
+            ):
                 remote_data_structure[url_suffix]["meta"] = pvl.loads(
                     remote_data_structure[url_suffix]["lbl_text"], decoder=DatetimeToETDecoder()
                 )
@@ -176,7 +195,7 @@ class MiniRFDataConnector(BaseDataConnector):
         dataset_data_intervals = IntervalList([struct["interval"] for struct in dataset_structure])
         dataset_structure_mask = dataset_data_intervals.intersection_mask(time_intervals)
 
-        logging.info("Found %s MiniRF data files intersecting with our time intervals".format(sum(dataset_structure_mask)))
+        logging.info(f"Found {sum(dataset_structure_mask)} MiniRF data files intersecting with our time intervals")
 
         virtual_files: List[VirtualFile] = []
         for file_dict, mask in zip(dataset_structure, dataset_structure_mask):
@@ -200,55 +219,213 @@ class MiniRFDataConnector(BaseDataConnector):
             + np.arange(0, self.current_file.metadata["lines"]) * self.current_file.metadata["line_exposure_duration"]
         )
         # Multiply them to create pandas dataframe
-        timestamps = timestamps.repeat(self.current_file.metadata["line_samples"])
         line_pixels = np.arange(0, self.current_file.metadata["line_samples"])
-        line_pixels = np.tile(line_pixels, self.current_file.metadata["lines"])
 
         arr = arr.reshape((self.current_file.metadata["lines"], self.current_file.metadata["line_samples"], 4))
 
-        df = pd.DataFrame(
-            {
-                "et": timestamps,
-                "mode": MINI_RF_MODES[self.current_file.metadata["instrument_mode_id"]],
-                "line": line_pixels,
-                "lines": self.current_file.metadata["line_samples"],
-                "ch1": arr[:, :, 0].flatten(),
-                "ch2": arr[:, :, 1].flatten(),
-                "ch3": arr[:, :, 2].flatten(),
-                "ch4": arr[:, :, 3].flatten(),
-            }
-        )
+        self.current_file.data = arr
+        self.current_file.timestamps = timestamps
+        self.current_file.line_pixels = line_pixels
 
-        mask = (df[["ch1", "ch2", "ch3", "ch4"]] == 0).all(axis=1)
-        df = df[~mask].reset_index(drop=True)
-        self.current_file.data = df
+    def _project_pixel(self, instrument, sub_instrument, et, line, lines):
+        if self.cache is not None and (et, line, lines) in self.cache:
+            return self.cache[(et, line, lines)]
+        self.kernel_manager.step_et(et)
+        pixel_vector = sub_instrument.look_vector_for_pixel(line, lines)
+        projection_vector = sub_instrument.transform_vector(instrument.frame, pixel_vector, et=et)
+        return_value = instrument.project_vector(et, projection_vector)
+        if self.cache is not None:
+            self.cache[(et, line, lines)] = return_value
+        return return_value
 
-    def _get_interval_data_from_current_file(self, time_interval: TimeInterval) -> List[Dict]:
+    def _get_subinstrument_from_mode(self, subinstrument, mode):
+        if mode in MINI_RF_S_MODES_IDX:
+            return subinstrument.s
+        elif mode in MINI_RF_X_MODES_IDX:
+            return subinstrument.x
+        else:
+            raise ValueError(f"Unknown mode {mode}")
+
+    def _get_interval_data_from_current_file(
+        self, time_interval: TimeInterval, instrument: BaseInstrument, filter_obj: BaseFilter
+    ) -> List[Dict]:
+        """Obtain data for the given time interval from the current file. To avoid returning too much data, prefilter the data with preevaluation metrics"""
+        import pdb; pdb.set_trace()
         if self.current_file is None:
             return []
-        data = self.current_file.data.loc[
-            (self.current_file.data.et > time_interval.start_et) & (self.current_file.data.et < time_interval.end_et)
-        ].copy()
-        return data.to_dict(orient="records")
+
+        timestamp_mask = (self.current_file.timestamps > time_interval.start_et) & (
+            self.current_file.timestamps < time_interval.end_et
+        )
+        data_slice_len = timestamp_mask.sum()
+        if data_slice_len < 2:
+            logger.warning(f"Insuffiient data for interval {time_interval}.")
+            return []
+
+        # Numpy array with data slice
+        data_slice = self.current_file.data[timestamp_mask, :, :]
+        # Numpy array with timestamps (et) slice
+        t = self.current_file.timestamps[timestamp_mask]
+        # Line indices (not a slice, we take all lines (same et for all pixels of line in this dim.))
+        l = self.current_file.line_pixels
+        # Init cache
+        self.cache = {}
+
+        mode = MINI_RF_MODES[self.current_file.metadata["instrument_mode_id"]]
+        sub_instrument = self._get_subinstrument_from_mode(instrument, mode)
+        # How wide a single radar line is (int, number of pixels)
+        lines = self.current_file.metadata["line_samples"]
+
+        points_to_project = [
+            (t[0], 0, lines),
+            (t[0], 1, lines),
+            (t[1], 0, lines),
+        ]
+
+        projected_points = [self._project_pixel(instrument, sub_instrument, *point) for point in points_to_project]
+        timestemp_delta = np.linalg.norm(projected_points[0].projection - projected_points[2].projection)
+        lines_delta = np.linalg.norm(projected_points[0].projection - projected_points[1].projection)
+
+        max_step_t = int(filter_obj.hard_radius / timestemp_delta)
+        max_step_l = int(filter_obj.hard_radius / lines_delta)
+        max_step = min(max_step_t, max_step_l)
+        min_step = SUBDIVISION_MIN_SIDE_LEN
+
+
+
+        # def slice_data(start_id_t, stop_id_t, start_id_l, stop_id_l) -> List[Dict]:
+        #     df = pd.DataFrame(
+        #         {
+        #             "et": t[start_id_t:stop_id_t].repeat(stop_id_l - start_id_l),
+        #             "mode": mode,
+        #             "line": np.tile(l[start_id_l:stop_id_l], stop_id_t - start_id_t),
+        #             "lines": lines,
+        #             "ch1": data_slice[start_id_t:stop_id_t, start_id_l:stop_id_l, 0].flatten(),
+        #             "ch2": data_slice[start_id_t:stop_id_t, start_id_l:stop_id_l, 1].flatten(),
+        #             "ch3": data_slice[start_id_t:stop_id_t, start_id_l:stop_id_l, 2].flatten(),
+        #             "ch4": data_slice[start_id_t:stop_id_t, start_id_l:stop_id_l, 3].flatten(),
+        #         }
+        #     )
+        #     mask = (df[["ch1", "ch2", "ch3", "ch4"]] == 0).all(axis=1)
+        #     return df[~mask].reset_index(drop=True).to_dict(orient="records")
+        
+        def slice_data(start_id_t, stop_id_t, start_id_l, stop_id_l) -> List[Dict]:
+            # pull out the block
+            block = data_slice[start_id_t:stop_id_t, start_id_l:stop_id_l, :]  # shape (T_block, L_block, 4)
+            # mask of non-zero pixels across all 4 channels
+            nz_mask = ~np.all(block == 0, axis=2)                               # shape (T_block, L_block)
+            if not nz_mask.any():
+                return []  # nothing to do here
+
+            # find the (i,j) subscripts of valid pixels
+            tt, ll = np.nonzero(nz_mask)                                        # both shape (N,)
+            # corresponding ETs and global line-indices
+            et_vals   = t[start_id_t:stop_id_t][tt]                             # shape (N,)
+            line_vals = l[start_id_l:stop_id_l][ll]                             # shape (N,)
+            chans     = block[tt, ll, :]                                        # shape (N,4)
+
+            # build your list of dicts
+            recs = []
+            for et_i, line_i, (c1, c2, c3, c4) in zip(et_vals, line_vals, chans):
+                recs.append({
+                    "et":    float(et_i),
+                    "mode":  mode,
+                    "line":  int(line_i),
+                    "lines": lines,
+                    "ch1":   float(c1),
+                    "ch2":   float(c2),
+                    "ch3":   float(c3),
+                    "ch4":   float(c4),
+                })
+            return recs
+
+        def cut_and_filter(start_id_t, stop_id_t, start_id_l, stop_id_l, init: bool = False) -> List[Dict]:
+            # If this is hit immediately upon starting, it can be outside our interest
+            # but it will eventually get filtered out and in this scale, it is irrelevant
+            if stop_id_t - start_id_t <= min_step or stop_id_l - start_id_l <= min_step:
+                if not init:
+                    return slice_data(start_id_t, stop_id_t, start_id_l, stop_id_l)
+                
+                ets_edges = (t[start_id_t], t[stop_id_t - 1])
+                lines_edges = (l[start_id_l], l[stop_id_l - 1])
+                projected_points = [
+                    self._project_pixel(instrument, sub_instrument, et, line, lines) for et, line in product(ets_edges, lines_edges)
+                ]
+                # It's small, if even one projection hits within, we take it all ...
+                for et, line in product(ets_edges, lines_edges):
+                    pixel_projection = self._project_pixel(instrument, sub_instrument, et, line, lines).projection
+                    if filter_obj.rank_point(pixel_projection) <= filter_obj.hard_radius:
+                        return slice_data(start_id_t, stop_id_t, start_id_l, stop_id_l)
+                return []
+
+            center_id_t = (start_id_t + stop_id_t) // 2
+            center_id_l = (start_id_l + stop_id_l) // 2
+
+            ets_edges = (t[start_id_t], t[center_id_t], t[stop_id_t - 1])
+            lines_edges = (l[start_id_l], l[center_id_l], l[stop_id_l - 1])
+            projected_points = [
+                self._project_pixel(instrument, sub_instrument, et, line, lines) for et, line in product(ets_edges, lines_edges)
+            ]
+            within_filter_radius = np.array(
+                [filter_obj.rank_point(point.projection) < filter_obj.hard_radius for point in projected_points]
+            ).reshape((3, 3))
+
+            # All corners and center are within filter? Slice all data
+            if within_filter_radius.all():
+                return slice_data(start_id_t, stop_id_t, start_id_l, stop_id_l)
+            # None of corners and neither center is within filter? Empty list
+            elif (~within_filter_radius).all():
+                return []
+            # If none of above is true, we have to solve each subdivision on it's own
+            else:
+                slicing_arguments = []
+                further_cutting_arguments = []
+
+                # If all corners of particular subdivision square are within, the whole slice is within
+                if within_filter_radius[:2, :2].all():
+                    slicing_arguments.append((start_id_t, center_id_t, start_id_l, center_id_l))
+                if within_filter_radius[:2, 1:].all():
+                    slicing_arguments.append((start_id_t, center_id_t, center_id_l, stop_id_l))
+                if within_filter_radius[1:, :2].all():
+                    slicing_arguments.append((center_id_t, stop_id_t, start_id_l, center_id_l))
+                if within_filter_radius[1:, 1:].all():
+                    slicing_arguments.append((center_id_t, stop_id_t, center_id_l, stop_id_l))
+                # If any of the corners of the subdivision square are within, further slicing is required
+                if within_filter_radius[:2, :2].any():
+                    further_cutting_arguments.append((start_id_t, center_id_t, start_id_l, center_id_l))
+                if within_filter_radius[:2, 1:].any():
+                    further_cutting_arguments.append((start_id_t, center_id_t, center_id_l, stop_id_l))
+                if within_filter_radius[1:, :2].any():
+                    further_cutting_arguments.append((center_id_t, stop_id_t, start_id_l, center_id_l))
+                if within_filter_radius[1:, 1:].any():
+                    further_cutting_arguments.append((center_id_t, stop_id_t, center_id_l, stop_id_l))
+
+                return_value = [slice_data(*args) for args in slicing_arguments] 
+                return_value += [cut_and_filter(*args) for args in further_cutting_arguments]
+                return list(chain.from_iterable(return_value))
+
+        t_args_values = np.append(np.arange(0, len(t), max_step), len(t))
+        l_args_values = np.append(np.arange(0, len(l), max_step), len(l))
+        t_args = np.array([t_args_values[:-1], t_args_values[1:]]).T
+        l_args = np.array([l_args_values[:-1], l_args_values[1:]]).T
+        args = np.array(list(product(t_args, l_args))).reshape((-1, 4))
+
+        return_value_list = []
+        for arg in args:
+            return_value_list.append(cut_and_filter(*arg, init=True))
+
+        self.cache = None
+        return list(chain.from_iterable(return_value_list))
+
 
     def process_data_entry(
         self, data_entry: Dict, instrument: BaseInstrument, filter_obj: BaseFilter
     ) -> Optional[Dict]:
-        if data_entry["mode"] in MINI_RF_S_MODES_IDX:
-            sub_instrument = instrument.s
-        elif data_entry["mode"] in MINI_RF_X_MODES_IDX:
-            sub_instrument = instrument.x
-        else:
-            logger.warning(f"Unknown mode {data_entry['mode']}")
-            return None
+        sub_instrument = self._get_subinstrument_from_mode(instrument, data_entry["mode"])
+        projection: ProjectionPoint = self._project_pixel(
+            instrument, sub_instrument, data_entry["et"], data_entry["line"], data_entry["lines"]
+        )
 
-        et = data_entry["et"]
-        self.kernel_manager.step_et(et)
-
-        pixel_vector = sub_instrument.look_vector_for_pixel(data_entry["line"], data_entry["lines"])
-        projection_vector = sub_instrument.transform_vector(instrument.frame, pixel_vector, et=et)
-
-        projection: ProjectionPoint = instrument.project_vector(et, projection_vector)
         if filter_obj.point_pass(projection.projection):
             data_entry.update(projection.to_data())
             return data_entry

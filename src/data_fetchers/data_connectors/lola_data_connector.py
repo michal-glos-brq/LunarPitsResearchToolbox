@@ -231,7 +231,7 @@ class LOLADataConnector(BaseDataConnector):
         df.drop(columns=["row_id"], inplace=True)
         self.current_file.data = df
 
-    def _get_interval_data_from_current_file(self, time_interval: TimeInterval):
+    def _get_interval_data_from_current_file(self, time_interval: TimeInterval, _: BaseInstrument, __: BaseFilter) -> List[Dict]:
         data = self.current_file.data.loc[
             (self.current_file.data.et > time_interval.start_et) & (self.current_file.data.et < time_interval.end_et)
         ].copy()

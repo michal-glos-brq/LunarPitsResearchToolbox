@@ -14,6 +14,7 @@ from src.SPICE.config import root_path
 
 logger = logging.getLogger(__name__)
 
+
 class ExtractorTaskRunner(BaseTaskRunner):
     """
     Task runner for remote sensing simulations.
@@ -53,26 +54,31 @@ class ExtractorTaskRunner(BaseTaskRunner):
         et_list = [spice.utc2et(t.iso) for t in time_list]
 
         logger.info("Obtaining intervals from the DB ...")
-        intervals = Sessions.get_simulation_intervals(config.instrument_names, config.interval_name)
+        extracxtion_kwargs = config["extraction_kwargs"]
+        intervals = Sessions.get_simulation_intervals(extracxtion_kwargs["instrument_names"], config["interval_name"])
 
         logger.info("Initializing interval managers ...")
         interval_manager = IntervalManager(intervals)
         interval_managers = interval_manager.split_by_timestamps(et_list)
 
         logger.info(
-            f"Submitting tasks for extraction: {config.experiment_name}; run {name}; intervals: {config.interval_name}"
+            f"Submitting tasks for extraction: {config['experiment_name']}; run {name}; intervals: {config['interval_name']}"
         )
 
-        assert (
-            len(interval_managers) == len(et_list) - 1
-        ), f"Expected {len(et_list) - 1} interval managers but got {len(interval_managers)}"
+        import pdb
 
-        for _interval_manager, (start_time, end_time) in zip(interval_managers, zip(et_list[:-1], et_list[1:])):
+        pdb.set_trace()
+
+        for _interval_manager in interval_managers:
+
+            if not _interval_manager:
+                logger.info("Empty interval manager, skipping...")
+                continue
 
             task_kwargs = dict(config["extraction_kwargs"])
 
-            task_kwargs["start_time_isot"] = start_time.isot
-            task_kwargs["end_time_isot"] = end_time.isot
+            task_kwargs["start_time_isot"] = _interval_manager.start_astropy_time.isot
+            task_kwargs["end_time_isot"] = _interval_manager.end_astropy_time.isot
             task_kwargs["time_interval_manager_json"] = _interval_manager.to_json()
 
             task_kwargs["extraction_name"] = name
@@ -80,9 +86,13 @@ class ExtractorTaskRunner(BaseTaskRunner):
 
             if not dry_run:
                 result = run_data_extraction_task.delay(**task_kwargs)
-                logger.info(f"  Task {task_counter}: {start_time.iso} → {end_time.iso} | Task ID: {result.id}")
+                logger.info(
+                    f"  Task {task_counter}: {_interval_manager.start_astropy_time.isot} → {_interval_manager.end_astropy_time.isot} | Task ID: {result.id}"
+                )
             else:
-                logger.info(f"  Task {task_counter}: {start_time.iso} → {end_time.iso} | (Dry run)")
+                logger.info(
+                    f"  Task {task_counter}: {_interval_manager.start_astropy_time.isot} → {_interval_manager.end_astropy_time.isot} | (Dry run)"
+                )
 
             task_counter += 1
 

@@ -1,5 +1,6 @@
 import heapq
 import logging
+
 from bisect import bisect_right
 from dataclasses import dataclass
 from functools import total_ordering

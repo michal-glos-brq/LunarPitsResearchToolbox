@@ -56,10 +56,8 @@ from tqdm.asyncio import tqdm
 from src.db.config import IMG_BASE_FOLDER
 from src.db.interface import Sessions
 from src.db.models.lunar_pit_atlas import PitDetailsMongoObject, PitsMongoObject, ImageMongoObject
-from src.global_config import LOG_LEVEL
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
 # Constants and configuration.
@@ -325,4 +323,8 @@ async def scrape_and_parse_lunar_pits():
 
 
 if __name__ == "__main__":
+
+    from src.global_config import setup_logging
+    setup_logging()
+
     asyncio.run(scrape_and_parse_lunar_pits())

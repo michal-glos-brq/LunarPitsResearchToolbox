@@ -32,7 +32,7 @@ class BaseSimulationConfig:
                 "instrument_names": cls.instrument_names,
                 "kernel_manager_type": cls.kernel_manager_type,
                 # When less than 300-400 GB of free space, set to False
-                "keep_dynamic_kernels": cls.kernel_manager_kwargs.get("keep_dynamic_kernels", False),
+                # "keep_dynamic_kernels": cls.kernel_manager_kwargs.get("keep_dynamic_kernels", False),
                 "filter_type": cls.filter_type,
                 "simulation_name": cls.experiment_name,
                 "kernel_manager_kwargs": cls.kernel_manager_kwargs,

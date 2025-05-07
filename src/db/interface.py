@@ -121,6 +121,7 @@ class Sessions:
 
     @staticmethod
     def process_failed_inserts():
+        # This is not async, becayse we do not want to finish, unless this is finished
         while not Sessions.failed_inserts.empty():
             results, collection = Sessions.failed_inserts.get()
             try:

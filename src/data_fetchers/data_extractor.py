@@ -2,6 +2,7 @@ import logging
 from contextlib import nullcontext
 from typing import Dict, List, Optional
 from datetime import datetime
+import traceback
 
 from bson import ObjectId
 from astropy.time import Time
@@ -21,7 +22,7 @@ from src.data_fetchers.data_connectors.mini_rf_data_connector import MiniRFDataC
 from src.filters import BaseFilter
 from src.db.interface import Sessions
 from src.data_fetchers.config import MONGO_UPLOAD_BATCH_SIZE
-from src.global_config import SUPRESS_TQDM, TQDM_NCOLS
+from src.global_config import SUPRESS_TQDM, TQDM_NCOLS, SUPRESS_TRACEBACKS
 from src.SPICE.utils import et2astropy_time
 
 
@@ -53,6 +54,8 @@ class DataFetchingEngine:
             # Here we collect data reprojected and filtered with filter object, ready for database push
             self.reprojected_data = []
             self.total_reprojected_data = 0
+            self.reprojected_rejected_total = 0
+            self.exception_rejected_total = 0
 
     class ExtractionState:
         def __init__(
@@ -166,32 +169,22 @@ class DataFetchingEngine:
         }
         return Sessions.prepare_extraction_metadata(simulation_metadata)
 
-    def iteration_housekeeping(self):
-        for instr_state in self.instrument_states.values():
-            if len(instr_state.reprojected_data) >= MONGO_UPLOAD_BATCH_SIZE:
-                # If we have more than MONGO_UPLOAD_BATCH_SIZE, we can push to MongoDB
-                import pdb
-
-                pdb.set_trace()
-                thread = Sessions.start_background_batch_insert(
-                    instr_state.reprojected_data, instr_state.data_collection
-                )
-                instr_state.reprojected_data = []
-                self.threads.append(thread)
-        self.check_threads()
-
     def process_data(self):
 
         def get_oldest_data_entry():
             """
             Get the oldest data entry from all instruments.
             """
-            oldest_entry = None
-            for instrument_state in self.instrument_states.values():
-                if instrument_state.data and instrument_state.data[0]["et"] < self.last_interval_start_et:
-                    if oldest_entry is None or instrument_state.data[0]["et"] < oldest_entry["et"]:
-                        oldest_entry = (instrument_state.instrument.name, instrument_state.data.pop(0))
-            return oldest_entry
+            try:
+                oldest_entry = None
+                for instrument_state in self.instrument_states.values():
+                    if instrument_state.data and instrument_state.data[0]["et"] < self.last_interval_start_et:
+                        # Oldest entry is a tuple (instrument_name, data_entry)
+                        if oldest_entry is None or instrument_state.data[0]["et"] < oldest_entry[1]["et"]:
+                            oldest_entry = (instrument_state.instrument.name, instrument_state.data.pop(0))
+                return oldest_entry
+            except Exception as e:
+                return None
 
         while dato := get_oldest_data_entry():
             instrument_name, data_entry = dato
@@ -203,13 +196,26 @@ class DataFetchingEngine:
                 )
 
                 if reprojected_data:
+
                     # Add for traceability
-                    reprojected_data["meta"] = {"extraction_name": self.extraction_state._extraction_name, "et": reprojected_data["et"]}
+                    reprojected_data["meta"] = {
+                        "extraction_name": self.extraction_state._extraction_name,
+                        "et": reprojected_data["et"],
+                    }
                     reprojected_data["timestamp"] = et2astropy_time(reprojected_data["et"]).datetime
-                    del reprojected_data["et"]
+                    del reprojected_data["et"]  # It's kept in meta for delete purposes (Mongo timeseries is weird)
 
                     self.instrument_states[instrument_name].reprojected_data.append(reprojected_data)
                     self.instrument_states[instrument_name].total_reprojected_data += 1
+                    if len(self.instrument_states[instrument_name].reprojected_data) >= MONGO_UPLOAD_BATCH_SIZE:
+                        # If we have more than MONGO_UPLOAD_BATCH_SIZE, we can push to MongoDB
+                        thread = Sessions.start_background_batch_insert(
+                            self.instrument_states[instrument_name].reprojected_data,
+                            self.instrument_states[instrument_name].data_collection,
+                        )
+                        self.instrument_states[instrument_name].reprojected_data = []
+                        self.threads.append(thread)
+
             except NotFoundError as e:
                 # This is to be expected
                 self.flush_SPICE()
@@ -238,6 +244,11 @@ class DataFetchingEngine:
         """
         Start the data extraction process. The main loop, controlling other components
         """
+        self.extraction_state.instruments = [
+            instrument
+            for instrument in self.extraction_state.instruments
+            if instrument.name in interval_manager.intervals
+        ]
         self.extraction_state.setup(
             interval_manager,
             start_time,
@@ -292,6 +303,8 @@ class DataFetchingEngine:
         # Potentially remove dangling old data from non-sucesfull task runs
         for instr in self.extraction_state.instruments:
             interval_list = interval_manager.get_interval_by_instrument(instr.name)
+            if interval_list is None:
+                continue
             Sessions.remove_potentail_data_from_failed_task_runs(
                 interval_list.start_et,
                 interval_list.end_et,
@@ -315,7 +328,11 @@ class DataFetchingEngine:
                     else:
                         logger.info(f"Processing interval {interval} for instrument {instrument_name}")
 
-                    new_data = self.data_connectors[instrument_name].read_interval(interval)
+                    new_data = self.data_connectors[instrument_name].read_interval(
+                        interval,
+                        self.instrument_states[instrument_name].instrument,
+                        self.extraction_state.get_filter(instrument_name),
+                    )
                     if new_data:
                         logger.info(
                             f"Instrument {instrument_name} has {len(new_data)} data points in interval {interval}"
@@ -330,22 +347,26 @@ class DataFetchingEngine:
                     SPICELog.log_spice_exception(
                         e, context=f"Error processing interval {interval} for instrument {instrument_name}"
                     )
+                    if not SUPRESS_TRACEBACKS:
+                        trace_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+                        logger.error(f"Exception occurred:\n{trace_str}")
                     self.flush_SPICE()
                 finally:
-                    import pdb; pdb.set_trace()
-                    self.iteration_housekeeping()
-                    try:
-                        if not instrument_interval_tuple is None:
-                            pbar.update(1)
-                    except Exception as e:
-                        # This is not to be expected, but does not really matter
-                        pass
+                    # If None, it's finished, and still wants to step this pbar, crashing the pbar
+                    if not instrument_interval_tuple is None:
+                        pbar.update(1)
 
         # Set to infinity so all the remaining data would be processed
         self.last_interval_start_et = float("inf")
         self.process_data()
 
-        self.iteration_housekeeping()
+        for instr_state in self.instrument_states.values():
+            if len(instr_state.reprojected_data):
+                thread = Sessions.start_background_batch_insert(
+                    instr_state.reprojected_data, instr_state.data_collection
+                )
+                instr_state.reprojected_data = []
+                self.threads.append(thread)
 
         # Await all threads.
         for thread in self.threads:

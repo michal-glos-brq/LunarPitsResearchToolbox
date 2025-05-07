@@ -18,7 +18,7 @@ app.conf.update(
     timezone="Europe/Prague",
     enable_utc=True,
     # Additional robust options (optional):
-    worker_max_tasks_per_child=8,
+    worker_max_tasks_per_child=4,
     worker_prefetch_multiplier=1,
     task_acks_late=True,
     task_default_queue="default",

@@ -263,13 +263,13 @@ class DivinerDataConnector(BaseDataConnector):
                 df.sort_values("et", inplace=True)
                 self.current_file.data = df
 
-    def _get_interval_data_from_current_file(self, time_interval: TimeInterval):
+    def _get_interval_data_from_current_file(self, time_interval: TimeInterval, _: BaseInstrument, __: BaseFilter) -> List[Dict]:
         # We assume the file is parsed, as is implemented in _load_next_file method logic
         data = self.current_file.data.loc[
             (self.current_file.data.et > time_interval.start_et) & (self.current_file.data.et < time_interval.end_et)
         ].copy()
-        data["c"] = -1
-        data["det"] = -1
+        data["c"] += -1
+        data["det"] += -1
         data[["cx_dsk", "cy_dsk", "cz_dsk"]] = self.kernel_manager.dsk.latlon_to_cartesian(data["clat"], data["clon"])
         return data.to_dict(orient="records")
 

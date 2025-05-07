@@ -21,7 +21,7 @@ class LunarPitAtlasMappingLROConfig(BaseSimulationConfig):
                             --sim-name lunar_pit_run \
                             --instruments MiniRF \
                             --interval-name lunar_pit_run \
-                            --threshold 20
+                            --threshold 10
     """
     experiment_name = "lunar_pit_atlas_mapping_LRO_simulation"
 

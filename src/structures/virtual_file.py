@@ -3,6 +3,7 @@ import requests
 import threading
 import logging
 import time
+import random
 from datetime import datetime
 from typing import Optional, Dict
 
@@ -47,7 +48,7 @@ class VirtualFile:
             self.file_path = None
             self.file = BytesIO()
         else:
-            name = f"{datetime.now().isoformat()}_{os.getpid()}".replace(":", "-").replace(".", "-")
+            name = f"{datetime.now().isoformat()}_{os.getpid()}_{random.random()}".replace(":", "-").replace(".", "-")
             path = os.path.join(DATAFILES_TMP_DESTINATION, name)
             self.file_path = path
             # open for write+binary, truncate if exists
@@ -168,9 +169,10 @@ class VirtualFile:
             raise RuntimeError(f"Download failed for {self.url}")
 
 
-    def download(self):
+    def download(self, postpone_seconds: int = 0):
         """Start download in background thread."""
         if self._thread is None or not self._thread.is_alive():
+            time.sleep(postpone_seconds)
             self._thread = threading.Thread(target=self._download_worker, daemon=True)
             self._thread.start()
 

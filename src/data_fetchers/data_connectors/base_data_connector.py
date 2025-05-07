@@ -18,16 +18,15 @@ from src.SPICE.kernel_utils.kernel_management import BaseKernelManager
 logger = logging.getLogger(__name__)
 
 
-
 _DESKTOP_UAS: tuple[str, ...] = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 "
     "(KHTML, like Gecko) Version/17.4 Safari/605.1.15",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Edg/124.0.2478.67",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " "(KHTML, like Gecko) Edg/124.0.2478.67",
 )
+
 
 class BaseDataConnector(ABC):
     """
@@ -57,17 +56,19 @@ class BaseDataConnector(ABC):
             raise NotImplementedError("Timeseries must be set in the derived class.")
         if self.indices is None:
             raise NotImplementedError("Indices must be set in the derived class.")
-        
+
         self.kernel_manager = kernel_manager
         self.remote_files: List[VirtualFile] = self.discover_files(time_intervals)
         self.current_file_idx = 0
         # Start fetching the first file, start prefetching the next one too
         if self.remote_files:
-            for file in self.remote_files[:2]:
-                file.download()
+            self.remote_files[0].download()
+            if len(self.remote_files) > 1:
+                # This is a little hacky, 15 seconds for the seconds file is OK, but not necessary
+                # Postponing the 2nd file download here because we can use sqlite request cache without SIGTERM
+                self.remote_files[1].download(postpone_seconds=15)
             self.current_file.wait_to_be_downloaded()
             self.parse_current_file()
-
 
     # Download logic implemented below is meant for smaller files
     @classmethod
@@ -83,16 +84,18 @@ class BaseDataConnector(ABC):
             adapter = HTTPAdapter(max_retries=retry, pool_connections=512, pool_maxsize=512)  # Well above max workers
 
             hdrs = default_headers()
-            hdrs.update({
-                "User-Agent": random.choice(_DESKTOP_UAS),
-                # The next three are what browsers send; servers often key on them
-                "Accept": "text/html,application/xhtml+xml,application/xml;"
-                          "q=0.9,image/avif,image/webp,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept-Encoding": "gzip, deflate, br",
-                # Keep-Alive is implicit with HTTP/1.1 but some sites still look for it
-                "Connection": "keep-alive",
-            })
+            hdrs.update(
+                {
+                    "User-Agent": random.choice(_DESKTOP_UAS),
+                    # The next three are what browsers send; servers often key on them
+                    "Accept": "text/html,application/xhtml+xml,application/xml;"
+                    "q=0.9,image/avif,image/webp,*/*;q=0.8",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    # Keep-Alive is implicit with HTTP/1.1 but some sites still look for it
+                    "Connection": "keep-alive",
+                }
+            )
 
             s = requests.Session()
             s.headers.update(hdrs)
@@ -131,7 +134,9 @@ class BaseDataConnector(ABC):
         ...
 
     @abstractmethod
-    def _get_interval_data_from_current_file(self, time_interval: IntervalList) -> List[Dict]:
+    def _get_interval_data_from_current_file(
+        self, time_interval: IntervalList, instrument: BaseInstrument, filter_obj: BaseFilter
+    ) -> List[Dict]:
         """Fetch data of the given interval from currently loaded dataframe or other data format"""
         ...
 
@@ -153,9 +158,9 @@ class BaseDataConnector(ABC):
         if self.current_file is not None:
             return self._parse_current_file()
 
-    def get_interval_data_from_current_file(self, time_interval: TimeInterval) -> List[Dict]:
+    def get_interval_data_from_current_file(self, time_interval: TimeInterval, instrument: BaseInstrument, filter_obj: BaseFilter) -> List[Dict]:
         if self.current_file is not None:
-            return self._get_interval_data_from_current_file(time_interval)
+            return self._get_interval_data_from_current_file(time_interval, instrument, filter_obj)
         else:
             return []
 
@@ -166,7 +171,7 @@ class BaseDataConnector(ABC):
         # Placeholder for actual validation logic
         return True
 
-    def read_interval(self, time_interval: TimeInterval) -> List[Dict]:
+    def read_interval(self, time_interval: TimeInterval, instrument: BaseInstrument, filter_obj: BaseFilter) -> List[Dict]:
         """
         Fetch data for the specified time interval. Files arefetched BASED on the interval list,
         so any discrepancies mean either file was not found or something terrible happened
@@ -209,7 +214,7 @@ class BaseDataConnector(ABC):
                 )
 
             # Fetch the matching chunk from the current file
-            chunk = self.get_interval_data_from_current_file(sub_iv)
+            chunk = self.get_interval_data_from_current_file(sub_iv, instrument, filter_obj)
 
             data.extend(chunk)
 
