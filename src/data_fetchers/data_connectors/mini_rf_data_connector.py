@@ -27,7 +27,7 @@ from src.data_fetchers.config import (
     MINI_RF_X_MODES_IDX,
 )
 from src.SPICE.utils import DatetimeToETDecoder
-from src.global_config import SUPRESS_TQDM, TQDM_NCOLS
+from src.global_config import SUPRESS_TQDM, TQDM_NCOLS, HDD_BASE_PATH
 from src.filters import BaseFilter
 from src.SPICE.instruments.instrument import BaseInstrument
 from src.SPICE.kernel_utils.kernel_management import BaseKernelManager
@@ -39,7 +39,7 @@ logger.setLevel(logging.INFO)
 
 minirf_url = lambda url: urllib.parse.urljoin(MINIRF_BASE_URL, url)
 pickle_file = os.path.join(Path(__file__).resolve().parent, MINNIRF_REMOTE_CACHE_FILE)
-
+pickle_file_lock = os.path.join(HDD_BASE_PATH, MINNIRF_REMOTE_CACHE_FILE + ".lock")
 
 SUBDIVISION_MIN_SIDE_LEN = 4
 
@@ -70,6 +70,8 @@ class MiniRFDataConnector(BaseDataConnector):
         This method fetches and parses dataset metadata. The pickled file is provided with the repository, because PDS servers
         do not like sending thousands of 5 Kb files at once. If an updated version is required, delete the pickle file and pubslish a new one
         """
+        # If for some reason the pickle file is not present, it's possible worker will not have permissions to write it,
+        # hence running it locally, pushing to git and updating is the way to update this data structure, though the data product is dead now
         with FileLock(pickle_file + ".lock", timeout=-1, poll_interval=1):
             if os.path.isfile(pickle_file):
                 with open(pickle_file, "rb") as f:

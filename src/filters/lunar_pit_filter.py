@@ -19,10 +19,10 @@ class LunarPitFilter(PointFilter):
             super().__init__(hard_radius, self._load_target_points())    
 
 
-    @staticmethod
-    def _name(**kwargs):
+    @property
+    def name(self):
         """Obtain the filter unique name without instantiation"""
-        return f"LunarPitFilter_{kwargs['hard_radius']}"
+        return f"LunarPitFilter_{self.hard_radius}"
 
 
     @classmethod

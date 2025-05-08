@@ -114,7 +114,6 @@ def run_data_extraction(
             retry_count=retry_count,
         )
     except Exception as e:
-        import pdb; pdb.set_trace()
         logger.error(f"Error during extraction: {e}")
         if self:
             self.update_state(state="FAILURE", meta={"error": str(e)})
