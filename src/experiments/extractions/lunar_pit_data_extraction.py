@@ -25,7 +25,7 @@ class DIVINERExtractorConfig(BaseExtractionConfig):
 
     start_time = Time("2009-07-05T00:00:00.000", format="isot", scale="utc")
     end_time = Time("2024-12-15T00:00:00.000", format="isot", scale="utc")
-    step_days = 1
+    step_days = 7
 
     kernel_manager_kwargs = {
         "frame": "MOON_PA_DE440",

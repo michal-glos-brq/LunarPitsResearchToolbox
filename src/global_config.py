@@ -2,6 +2,7 @@ import os
 import logging
 
 from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 from astropy.time import Time
 
 ### System level confoguration
@@ -31,18 +32,10 @@ Time.precision = SPICE_DECIMAL_PRECISION
 
 MASTER_IP = os.getenv("MASTER_IP", "host.docker.internal")
 
-# DEBUG, INFO, WARNING, ERROR, CRITICAL
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-if LOG_LEVEL not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
-    raise ValueError(f"Invalid log level: {LOG_LEVEL}. Must be one of DEBUG, INFO, WARNING, ERROR, CRITICAL.")
-
-LOG_LEVEL = {
-    "DEBUG": logging.DEBUG,
-    "INFO": logging.INFO,
-    "WARNING": logging.WARNING,
-    "ERROR": logging.ERROR,
-    "CRITICAL": logging.CRITICAL,
-}[LOG_LEVEL]
+_LOG_NAME = os.getenv("LOG_LEVEL", "INFO").upper()
+if _LOG_NAME not in ("DEBUG","INFO","WARNING","ERROR","CRITICAL"):
+    raise ValueError(f"Invalid LOG_LEVEL { _LOG_NAME }")
+LOG_LEVEL = getattr(logging, _LOG_NAME)
 
 
 
@@ -75,9 +68,11 @@ def setup_logging():
         root.removeHandler(h)
 
     if not SUPRESS_TQDM:
-        handler = TqdmLoggingHandler()
+        # wrap so that any calls inside a tqdm context stay in order
+        logging_redirect_tqdm()
+        handler = TqdmLoggingHandler(LOG_LEVEL)
     else:
-        handler = logging.StreamHandler()
+        handler = logging.StreamHandler(stream=sys.stderr)
 
     fmt = "%(asctime)s %(levelname)-8s [%(name)s] %(message)s"
     handler.setFormatter(logging.Formatter(fmt))

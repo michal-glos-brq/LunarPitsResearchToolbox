@@ -15,7 +15,6 @@ from src.SPICE.instruments.lro import (
 from src.SPICE.instruments.grail import GrailAInstrument, GrailBInstrument
 from src.simulation.simulator import RemoteSensingSimulator
 from src.filters import FILTER_MAP
-from src.global_config import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +65,6 @@ def run_remote_sensing_simulation(
     Returns:
       A summary dictionary of the simulation results.
     """
-    # Setup the logging in case TQDM is not supressed, though with celery task, it should be so in every case
-    setup_logging()
-
     logger.info(
         f"Received args: start_time_isot={start_time_isot}, end_time_isot={end_time_isot}, "
         f"instrument_names={instrument_names}, kernel_manager_type={kernel_manager_type}, "

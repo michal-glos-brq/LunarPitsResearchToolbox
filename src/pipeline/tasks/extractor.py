@@ -18,7 +18,6 @@ from src.SPICE.instruments.lro import (
 from src.SPICE.instruments.grail import GrailAInstrument, GrailBInstrument
 from src.structures import IntervalManager
 from src.data_fetchers.data_extractor import DataFetchingEngine
-from src.global_config import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +58,6 @@ def run_data_extraction(
 
     Returns a summary dict with 'status' and number of chunks processed.
     """
-    # Setup the logging in case TQDM is not supressed, though with celery task, it should be so in every case
-    setup_logging()
-
     logger.info(f"Starting extraction {extraction_name or '<unnamed>'}, retry={retry_count}")
 
     # 1. Parse & validate times up-front

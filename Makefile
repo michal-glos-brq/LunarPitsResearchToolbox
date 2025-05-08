@@ -25,7 +25,7 @@ worker-start:
 		--network=host \
 		-v $(UTILITY_VOLUME):/app/data \
 		-u $(shell id -u):$(shell id -g) \
-  		worker || true
+  		worker --loglevel=$(if $(LOG_LEVEL),$(LOG_LEVEL),INFO) || true
 
 format:
 	@poetry run black . --quiet
