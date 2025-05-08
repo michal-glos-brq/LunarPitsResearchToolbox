@@ -142,7 +142,14 @@ class DataFetchingEngine:
     def maybe_log_extraction_state(self):
         if self.real_time_checkpoint + EXTR_STATE_DUMP_INTERVAL < time.time():
             ## Logging to the terminal
-            logger.info(f"Running for {time.time() - self.real_time_start:.2f} seconds")
+            logger.info(
+                f"Running for {time.time() - self.real_time_start:.2f} seconds"
+                + (
+                    ""
+                    if self.extraction_state.task_group_id is not None
+                    else f" (task group {self.extraction_state.task_group_id})"
+                )
+            )
             self.real_time_checkpoint = time.time()
             for instrument_state in self.instrument_states.values():
                 logger.info(instrument_state.status_line())
@@ -153,7 +160,9 @@ class DataFetchingEngine:
                     meta={
                         "status": {
                             "extraction_name": self.extraction_state.extraction_name,
-                            "instrument_states": {instr.instrument.name: instr.status_dict() for instr in self.instrument_states.values()},
+                            "instrument_states": {
+                                instr.instrument.name: instr.status_dict() for instr in self.instrument_states.values()
+                            },
                         }
                     },
                 )
@@ -397,6 +406,7 @@ class DataFetchingEngine:
                     self.maybe_log_extraction_state()
 
                     if new_data:
+                        self.instrument_states[instrument_name].processed_intervals += 1
                         logger.info(
                             f"Instrument {instrument_name} has {len(new_data)} data points in interval {interval}"
                         )
@@ -404,8 +414,6 @@ class DataFetchingEngine:
                         self.instrument_states[instrument_name].total_data += len(new_data)
                     else:
                         logger.info(f"Instrument {instrument_name} has no data in interval {interval}")
-
-                    self.instrument_states[instrument_name].processed_intervals += 1
 
                     self.process_data()
                 except Exception as e:
@@ -443,12 +451,15 @@ class DataFetchingEngine:
             self.extraction_state.simulation_metadata_id,
             self.extraction_state.end_time.datetime,
             finished=True,
-            metadata={instr_name: {
-                "total_data": instr_state.total_data,
-                "total_reprojected_data": instr_state.total_reprojected_data,
-                "reprojected_rejected_total": instr_state.reprojected_rejected_total,
-                "exception_rejected_total": instr_state.exception_rejected_total,
-            } for instr_name, instr_state in self.instrument_states.items()},
+            metadata={
+                instr_name: {
+                    "total_data": instr_state.total_data,
+                    "total_reprojected_data": instr_state.total_reprojected_data,
+                    "reprojected_rejected_total": instr_state.reprojected_rejected_total,
+                    "exception_rejected_total": instr_state.exception_rejected_total,
+                }
+                for instr_name, instr_state in self.instrument_states.items()
+            },
         )
         self.threads.append(update_thread)
 
