@@ -72,7 +72,7 @@ class MiniRFDataConnector(BaseDataConnector):
         """
         # If for some reason the pickle file is not present, it's possible worker will not have permissions to write it,
         # hence running it locally, pushing to git and updating is the way to update this data structure, though the data product is dead now
-        with FileLock(pickle_file + ".lock", timeout=-1, poll_interval=1):
+        with FileLock(pickle_file_lock, timeout=-1, poll_interval=1):
             if os.path.isfile(pickle_file):
                 with open(pickle_file, "rb") as f:
                     data_structure = pickle.load(f)
