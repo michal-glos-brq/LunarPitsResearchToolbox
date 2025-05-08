@@ -62,46 +62,46 @@ def run_data_extraction(
     # Setup the logging in case TQDM is not supressed, though with celery task, it should be so in every case
     setup_logging()
 
-    logger.info(
-        f"Received args: start_time_isot={start_time_isot}, end_time_isot={end_time_isot}, "
-        f"instrument_names={instrument_names}, kernel_manager_type={kernel_manager_type}, "
-        f"kernel_manager_kwargs={kernel_manager_kwargs}, filter_kwargs={filter_kwargs}, "
-        f"filter_type={filter_type}, extraction_name={extraction_name}; custom_filter_kwargs={custom_filter_kwargs}"
-    )
+    logger.info(f"Starting extraction {extraction_name or '<unnamed>'}, retry={retry_count}")
 
+    # 1. Parse & validate times up-front
     try:
         start_time = Time(start_time_isot, format="isot", scale="utc")
-        end_time = Time(end_time_isot, format="isot", scale="utc")
+        end_time   = Time(end_time_isot,   format="isot", scale="utc")
     except Exception as e:
-        raise ValueError(f"Invalid Time inputs: {e}")
+        raise ValueError(f"Bad time input: {e!r}")
 
+    if start_time >= end_time:
+        raise ValueError("start_time must be strictly before end_time")
+
+    # 2. Validate parameters
     if kernel_manager_type not in KERNEL_MANAGER_MAP:
-        raise ValueError(f"Unsupported kernel manager '{kernel_manager_type}'")
-
-    for nm in instrument_names:
-        if nm not in INSTRUMENT_MAP:
-            raise ValueError(f"Unsupported instrument '{nm}'")
-
+        raise ValueError(f"Unknown kernel_manager_type: {kernel_manager_type!r}")
+    for name in instrument_names:
+        if name not in INSTRUMENT_MAP:
+            raise ValueError(f"Unknown instrument: {name!r}")
     if filter_type not in FILTER_MAP:
-        raise ValueError(f"Unsupported filter type '{filter_type}'")
+        raise ValueError(f"Unknown filter_type: {filter_type!r}")
 
+    # 3. Tweak kernel bounds by a small margin
     kernel_manager_kwargs.setdefault("min_required_time", start_time - TimeDelta(10, format="sec"))
     kernel_manager_kwargs.setdefault("max_required_time", end_time + TimeDelta(10, format="sec"))
 
-    ### Instantiating and prepare required objects
-    kernel_manager = KERNEL_MANAGER_MAP[kernel_manager_type](**kernel_manager_kwargs)
+    # 4. Instantiate everything inside a context so we guarantee cleanup
+    km_cls = KERNEL_MANAGER_MAP[kernel_manager_type]
+    kernel_manager = km_cls(**kernel_manager_kwargs)
     kernel_manager.activate(start_time)
 
-    filter_obj = FILTER_MAP[filter_type].from_kwargs_and_kernel_manager(kernel_manager, **filter_kwargs)
-    custom_filter_objects = {
-        name: FILTER_MAP[filter_type].from_kwargs_and_kernel_manager(kernel_manager, **kwargs)
-        for name, kwargs in custom_filter_kwargs.items()
-    }
-    instruments = [INSTRUMENT_MAP[name]() for name in instrument_names]
-
-    extractor = DataFetchingEngine(instruments, filter_obj, kernel_manager, custom_filter_objects)
-
     try:
+        filter_obj = FILTER_MAP[filter_type].from_kwargs_and_kernel_manager(kernel_manager, **filter_kwargs)
+        custom_filter_objects = {
+            name: FILTER_MAP[filter_type].from_kwargs_and_kernel_manager(kernel_manager, **kwargs)
+            for name, kwargs in custom_filter_kwargs.items()
+        }
+        instruments = [INSTRUMENT_MAP[name]() for name in instrument_names]
+
+        # 6. Kick off the engine
+        extractor = DataFetchingEngine(instruments, filter_obj, kernel_manager, custom_filter_objects)  
         extractor.start_extraction(
             IntervalManager.from_json(time_interval_manager_json),
             start_time=start_time,
@@ -113,12 +113,32 @@ def run_data_extraction(
             task_group_id=str(uuid.uuid4()),
             retry_count=retry_count,
         )
+
     except Exception as e:
-        logger.error(f"Error during extraction: {e}")
+        # 7. Capture full exception info in Celery meta so exc_type isn’t lost
+        import traceback, sys
+        etype, evalue, tb = sys.exc_info()
+        tb_lines = traceback.format_exception(etype, evalue, tb)
+        logger.error("Extraction failed:\n%s", "".join(tb_lines))
         if self:
-            self.update_state(state="FAILURE", meta={"error": str(e)})
-        raise e
+            self.update_state(
+                state="FAILURE",
+                meta={
+                    "exc_type":    etype.__name__,
+                    "exc_message": str(evalue),
+                    "traceback":   tb_lines,
+                }
+            )
+        raise  # re-raise with original traceback
+
     finally:
+        # 8. Always unload kernels no matter what
         kernel_manager.unload_all()
 
-    return {"status": "success"}
+    # 9. Return a clear summary
+    return {
+        "status":            "SUCCESS",
+        "instruments":       instrument_names,
+        "retry_count":       retry_count,
+        "extraction_name":   extraction_name,
+    }
