@@ -49,5 +49,7 @@ run_remote_sensing_simulation_task = app.task(
 run_data_extraction_task = app.task(
     name="src.pipeline.tasks.extractor.run_data_extraction",
     bind=True,
+    broker_transport_options={'visibility_timeout': 172800*2},
+    result_backend_transport_options={'visibility_timeout': 172800*2}
 )(run_data_extraction)
 
