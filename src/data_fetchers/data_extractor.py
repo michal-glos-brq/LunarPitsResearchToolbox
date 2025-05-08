@@ -259,9 +259,6 @@ class DataFetchingEngine:
                 # This is to be expected
                 self.flush_SPICE()
                 self.instrument_states[instrument_name].exception_rejected_total += 1
-                if not SUPRESS_TRACEBACKS:
-                    trace_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-                    logger.error(f"Exception occurred:\n{trace_str}")
             except Exception as e:
                 SPICELog.log_spice_exception(e, context=f"Error processing data entry for instrument {instrument_name}")
                 self.flush_SPICE()
