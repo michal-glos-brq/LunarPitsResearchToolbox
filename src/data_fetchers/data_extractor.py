@@ -153,7 +153,7 @@ class DataFetchingEngine:
                     meta={
                         "status": {
                             "extraction_name": self.extraction_state.extraction_name,
-                            "instrument_states": {instr.name: instr.status_dict() for instr in self.instrument_states.values()},
+                            "instrument_states": {instr.instrument.name: instr.status_dict() for instr in self.instrument_states.values()},
                         }
                     },
                 )
