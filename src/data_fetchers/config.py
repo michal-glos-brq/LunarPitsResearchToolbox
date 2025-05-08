@@ -7,7 +7,7 @@ from src.global_config import HDD_BASE_PATH
 MONGO_UPLOAD_BATCH_SIZE = 1024
 
 # How long between dumping the extraction state to stdout
-EXTR_STATE_DUMP_INTERVAL = 120
+EXTR_STATE_DUMP_INTERVAL = 300
 
 ##### Mini-RF #####
 MINIRF_BASE_URL = "https://pds-geosciences.wustl.edu/"

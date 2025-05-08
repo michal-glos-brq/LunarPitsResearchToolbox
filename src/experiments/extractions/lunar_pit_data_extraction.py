@@ -25,7 +25,7 @@ class DIVINERExtractorConfig(BaseExtractionConfig):
 
     start_time = Time("2009-07-05T00:00:00.000", format="isot", scale="utc")
     end_time = Time("2024-12-15T00:00:00.000", format="isot", scale="utc")
-    step_days = 7
+    step_days = 3
 
     kernel_manager_kwargs = {
         "frame": "MOON_PA_DE440",
@@ -44,6 +44,9 @@ class DIVINERExtractorConfig(BaseExtractionConfig):
 
     custom_filter_kwargs = {
         "MiniRF": {
+            "hard_radius": 8,
+        },
+        "LOLA": {
             "hard_radius": 10,
         }
     }

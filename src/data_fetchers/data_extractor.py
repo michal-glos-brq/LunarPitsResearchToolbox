@@ -60,28 +60,28 @@ class DataFetchingEngine:
             self.total_intervals = len(instrument_connector.remote_files)
             self.processed_intervals = 0
 
+        def status_dict(self) -> dict:
+            return {
+                "name": self.instrument.name[:20],
+                "data": self.total_data,
+                "reproj": self.total_reprojected_data,
+                "rej": self.reprojected_rejected_total,
+                "exc": self.exception_rejected_total,
+                "proc": self.processed_intervals,
+                "tot": self.total_intervals,
+            }
+
         def status_line(self) -> str:
-            """
-            Return a single-line summary of this instrument's state,
-            formatted to fit within ~120 characters.
-            """
+            d = self.status_dict()
             tpl = (
                 "{name:<20}"
                 " data={data:>6}"
-                " reproj={rp:>6}"
-                " rej={rrej:>6}"
+                " reproj={reproj:>6}"
+                " rej={rej:>6}"
                 " exc={exc:>6}"
                 " intervals={proc:>3}/{tot:<3}"
             )
-            return tpl.format(
-                name=self.instrument.name[:20],
-                data=self.total_data,
-                rp=self.total_reprojected_data,
-                rrej=self.reprojected_rejected_total,
-                exc=self.exception_rejected_total,
-                proc=self.processed_intervals,
-                tot=self.total_intervals,
-            )
+            return tpl.format(**d)
 
     class ExtractionState:
         def __init__(
@@ -141,10 +141,22 @@ class DataFetchingEngine:
 
     def maybe_log_extraction_state(self):
         if self.real_time_checkpoint + EXTR_STATE_DUMP_INTERVAL < time.time():
+            ## Logging to the terminal
             logger.info(f"Running for {time.time() - self.real_time_start:.2f} seconds")
             self.real_time_checkpoint = time.time()
             for instrument_state in self.instrument_states.values():
                 logger.info(instrument_state.status_line())
+            ## Adding information to celery worker
+            if self.extraction_state.current_task is not None:
+                self.extraction_state.current_task.update_state(
+                    state="PROGRESS",
+                    meta={
+                        "status": {
+                            "extraction_name": self.extraction_state.extraction_name,
+                            "instrument_states": {instr.name: instr.status_dict() for instr in self.instrument_states.values()},
+                        }
+                    },
+                )
 
     def check_threads(self):
         # Iterate in reverse to safely pop finished threads.
@@ -392,6 +404,8 @@ class DataFetchingEngine:
                         self.instrument_states[instrument_name].total_data += len(new_data)
                     else:
                         logger.info(f"Instrument {instrument_name} has no data in interval {interval}")
+
+                    self.instrument_states[instrument_name].processed_intervals += 1
 
                     self.process_data()
                 except Exception as e:
