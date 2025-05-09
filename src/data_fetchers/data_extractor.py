@@ -331,6 +331,17 @@ class DataFetchingEngine:
 
         self.extraction_state.kernel_manager.step(self.extraction_state.start_time)
 
+
+        # Log the simulation state into Mongo, eventually quit if task already finished
+        task_already_finished = self.create_metadata_record()
+        if task_already_finished:
+            if current_task is not None:
+                current_task.update_state(
+                    state="SUCCESS", meta={"result": "Task already finished, no computation to do."}
+                )
+            return
+
+
         self.data_connectors = self.setup_data_connectors()
         self.instrument_states = {
             instr.name: self.InstrumentState(instr, self.data_connectors[instr.name])
@@ -349,14 +360,6 @@ class DataFetchingEngine:
             else nullcontext()
         )
 
-        # Log the simulation state into Mongo
-        task_already_finished = self.create_metadata_record()
-        if task_already_finished:
-            if current_task is not None:
-                current_task.update_state(
-                    state="SUCCESS", meta={"result": "Task already finished, no computation to do."}
-                )
-            return
 
         SPICELog.interactive_progress = interactive_progress
         SPICELog.supress_output = supress_error_logs
