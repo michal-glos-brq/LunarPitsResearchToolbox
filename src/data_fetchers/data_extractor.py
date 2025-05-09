@@ -146,7 +146,7 @@ class DataFetchingEngine:
                 f"Running for {time.time() - self.real_time_start:.2f} seconds"
                 + (
                     ""
-                    if self.extraction_state.task_group_id is not None
+                    if self.extraction_state.task_group_id is None
                     else f" (task group {self.extraction_state.task_group_id})"
                 )
             )

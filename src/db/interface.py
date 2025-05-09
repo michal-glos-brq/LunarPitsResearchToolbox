@@ -523,6 +523,11 @@ class Sessions:
             },
         }
         existing = collection.find_one(query)
+
+        # Delete any unfinished duplicate tasks
+        unfinished_query = query.copy()
+        unfinished_query["finished"] = False
+        collection.delete_many(unfinished_query)
         if existing:
             return True
         else:
@@ -598,9 +603,9 @@ class Sessions:
                 collection.insert_many(results, ordered=False)  # Insert in bulk, unordered (faster)
                 return  # Success, exit function
             except errors.PyMongoError as e:
-                logging.warning("Batch insert failed: %s", e)
+                logging.warning("Batch insert %s failed: %s", attempt, e)
                 if attempt >= MAX_MONGO_RETRIES - 1:
-                    logging.error("Batch insert failed permanently: %s", e)
+                    logging.critical("Batch insert failed permanently: %s", e)
                     Sessions.failed_inserts.put((results, collection))
                 wait_time *= 1.2
                 time.sleep(wait_time)

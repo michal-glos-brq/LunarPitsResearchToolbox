@@ -5,6 +5,12 @@ from astropy.time import Time
 
 class DIVINERExtractorConfig(BaseExtractionConfig):
     """
+    Haw I ran it:
+    ./src/manual_scripts/aggregate_simulation_intervals.py --config-name lunar_pit_atlas_mapping_LRO_simulation --sim-name lunar_pit_run --instruments DIVINER --interval-name lunar_pit_run --threshold 5
+    ./src/manual_scripts/aggregate_simulation_intervals.py --config-name lunar_pit_atlas_mapping_LRO_simulation --sim-name lunar_pit_run --instruments MiniRF --interval-name lunar_pit_run --threshold 8
+    ./src/manual_scripts/aggregate_simulation_intervals.py --config-name lunar_pit_atlas_mapping_LRO_simulation --sim-name lunar_pit_run --instruments LOLA --interval-name lunar_pit_run --threshold 10
+
+    ./src/manual_scripts/assign_tasks.py --config-name lunar_pit_extraction_full --name lunar_pit_extraction_full --task extraction
     Run example: ./src/manual_scripts/assign_tasks.py \
                     --config-name lunar_pit_extraction_full \
                     --name lunar_pit_extraction_full \
