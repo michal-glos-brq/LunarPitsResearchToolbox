@@ -177,59 +177,63 @@ class LOLADataConnector(BaseDataConnector):
         return virtual_files
 
     def _parse_current_file(self):
-        self.current_file.wait_to_be_downloaded()
-        raw = self.current_file.file.read()
-        arr = np.frombuffer(raw, dtype=lola_rdr_dtype())
-        df = pd.DataFrame(arr)
+        try:
+            self.current_file.wait_to_be_downloaded()
+            raw = self.current_file.file.read()
+            arr = np.frombuffer(raw, dtype=lola_rdr_dtype())
+            df = pd.DataFrame(arr)
 
-        df.replace(
-            {
-                np.int32(-2147483648): np.nan,
-                np.uint32(4294967295): np.nan,
-                np.uint16(65535): np.nan,
-            },
-            inplace=True,
-        )
+            df.replace(
+                {
+                    np.int32(-2147483648): np.nan,
+                    np.uint32(4294967295): np.nan,
+                    np.uint16(65535): np.nan,
+                },
+                inplace=True,
+            )
 
-        df["et"] = df["TRANSMIT_TIME_0"].astype("float64") + df["TRANSMIT_TIME_1"] * (2**-32)
-        df.drop(
-            columns=[
-                "TRANSMIT_TIME_0",
-                "TRANSMIT_TIME_1",
-                "MET_SECONDS",
-                "SUBSECONDS",
-                "EARTH_RANGE",
-                "EARTH_PULSE",
-                "EARTH_ENERGY",
-            ],
-            inplace=True,
-        )
+            df["et"] = df["TRANSMIT_TIME_0"].astype("float64") + df["TRANSMIT_TIME_1"] * (2**-32)
+            df.drop(
+                columns=[
+                    "TRANSMIT_TIME_0",
+                    "TRANSMIT_TIME_1",
+                    "MET_SECONDS",
+                    "SUBSECONDS",
+                    "EARTH_RANGE",
+                    "EARTH_PULSE",
+                    "EARTH_ENERGY",
+                ],
+                inplace=True,
+            )
 
-        stubs = [
-            "LONGITUDE",
-            "LATITUDE",
-            "RADIUS",
-            "RANGE",
-            "PULSE",
-            "ENERGY",
-            "BACKGROUND",
-            "THRESHOLD",
-            "GAIN",
-            "SHOT_FLAG",
-        ]
+            stubs = [
+                "LONGITUDE",
+                "LATITUDE",
+                "RADIUS",
+                "RANGE",
+                "PULSE",
+                "ENERGY",
+                "BACKGROUND",
+                "THRESHOLD",
+                "GAIN",
+                "SHOT_FLAG",
+            ]
 
-        df = df.reset_index(drop=True).rename_axis("row_id").reset_index()
-        df = pd.wide_to_long(
-            df,
-            stubnames=stubs,
-            i="row_id",  # identifies each original frame
-            j="spot",  # new column will be called “spot”
-            sep="_",  # stubs are separated from numbers by “_”
-            suffix="\\d+",  # the suffix is one or more digits
-        ).reset_index()
+            df = df.reset_index(drop=True).rename_axis("row_id").reset_index()
+            df = pd.wide_to_long(
+                df,
+                stubnames=stubs,
+                i="row_id",  # identifies each original frame
+                j="spot",  # new column will be called “spot”
+                sep="_",  # stubs are separated from numbers by “_”
+                suffix="\\d+",  # the suffix is one or more digits
+            ).reset_index()
 
-        df.drop(columns=["row_id"], inplace=True)
-        self.current_file.data = df
+            df.drop(columns=["row_id"], inplace=True)
+            self.current_file.data = df
+        except Exception as e:
+            logger.error(f"Failed to parse LOLA data: {e}")
+            self.current_file.data = pd.DataFrame()
 
     def _get_interval_data_from_current_file(self, time_interval: TimeInterval, _: BaseInstrument, __: BaseFilter) -> List[Dict]:
         data = self.current_file.data.loc[
