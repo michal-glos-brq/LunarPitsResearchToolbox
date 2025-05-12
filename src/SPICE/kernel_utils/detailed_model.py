@@ -8,24 +8,17 @@ University: Brno University of Technology (VUT)
 Faculty: Faculty of Electrical Engineering and Communication (FEKT)
 Diploma Thesis Project
 
-Description:
-------------
-This module implements the generation of a Digital Shape Kernel (DSK)
-for the lunar surface using SPICE. The process includes:
+This module implements the generation of a high-resolution Digital Shape Kernel (DSK)
+for the Moon’s surface using SPICE and external elevation data.
 
-1. Downloading high-resolution lunar elevation data from USGS.
-2. Converting TIFF elevation data to XYZ format using GDAL.
-3. Transforming the XYZ data into a triangulated mesh for DSK.
-4. Writing the DSK file with SPICE.
+Core functionality:
+    - Downloads a TIF DEM from USGS if needed.
+    - Converts it to XYZ using GDAL CLI.
+    - Interpolates and triangulates the 3D mesh.
+    - Writes the output as a SPICE-compatible .dsk file.
+    - Optionally pulls pre-built DSKs from BunnyCDN cache.
 
-The generated kernel allows precise modeling of the Moon's surface
-for spacecraft navigation, simulations, and planetary science research.
-
-Usage:
---------
-    kernel = DetailedModelDSKKernel("moon_surface.dsk")
-    # The file "moon_surface.dsk" will be created if not found.
-
+Intended for planetary surface modeling, sensor simulation, and navigation system testing.
 """
 
 import os
@@ -34,7 +27,7 @@ import logging
 import requests
 from tqdm import tqdm
 from urllib.parse import urljoin
-from typing import Union, Optional
+from typing import Union
 
 import pandas as pd
 import numpy as np
@@ -107,12 +100,29 @@ else:
 
 class DetailedModelDSKKernel(BaseKernel):
 
+    """
+    Generates or retrieves a detailed SPICE DSK kernel for the Moon’s surface.
+
+    On instantiation:
+        - Checks for local .dsk file.
+        - If missing, checks BunnyCDN for pre-generated DSK.
+        - If still missing, downloads TIF, converts to XYZ, generates triangles, and writes a new .dsk.
+
+    Optionally downsamples based on `tif_sample_rate`.
+
+    Attributes:
+        filename (str): Output path for generated or retrieved DSK.
+        tif_scale_percents (float): GDAL CLI downsampling percentage.
+        base_filename (str): Path without file extension, used for auxiliary files (e.g., .xyz).
+    """
+
     def __init__(self, filename: str, tif_sample_rate: float = DEFAULT_TIF_SAMPLE_RATE):
         """
-        This kernel is very specific - filename is the desired .dsk file, but will be caching files with different
-        suffixes. Url will be location of the source tiff data
+        Initialize and generate or retrieve the DSK kernel file.
 
-        If DSK file is not found locally, processing begins with kernel instantiation.
+        Parameters:
+            filename (str): Output filename for the .dsk kernel.
+            tif_sample_rate (float): Sampling rate for TIF-to-XYZ conversion (0–1 scale).
         """
         self.filename = filename  # The DSK Kernel name
         self.base_filename = ".".join(filename.split(".")[:-1])
@@ -142,6 +152,12 @@ class DetailedModelDSKKernel(BaseKernel):
 
     @property
     def remote_dsk_exists(self):
+        """
+        Check whether the desired DSK exists in BunnyCDN cloud storage.
+
+        Returns:
+            bool: True if the file is found remotely, False otherwise.
+        """
         url = urljoin(BUNNY_BASE_URL, f"{BUNNY_STORAGE}")
         response = requests.get(url, headers={"AccessKey": BUNNY_PASSWORD})
         if response.status_code != 200:
@@ -153,26 +169,39 @@ class DetailedModelDSKKernel(BaseKernel):
 
     @property
     def tif_filename(self):
-        """Source data do not need dynamic name, hence keep the remote filename"""
+        """
+        Get local path to the original TIF elevation data file.
+
+        Returns:
+            str: Full path to cached TIF.
+        """
         return os.path.join(HDD_BASE_PATH, LUNAR_TIF_DATA_URL.split("/")[-1])
 
     @property
     def tif_file_exists(self):
+        """Check whether the TIF file is present locally."""
         return os.path.exists(self.tif_filename)
 
     @property
     def xyz_filename(self):
+        """Get local path for the intermediate XYZ file (used for DSK conversion)."""
         return self.base_filename + ".xyz"
 
     @property
     def xyz_file_exists(self):
+        """Check whether the XYZ file is present locally."""
         return os.path.exists(self.xyz_filename)
 
     def latlon_to_cartesian(self, lat: Union[float, np.ndarray], lon: Union[float, np.ndarray]) -> np.ndarray:
         """
-        Convert lat/lon to Cartesian (X, Y, Z) coordinates using DSK surface intersection.
-        - lat, lon in degrees (can be float or np.ndarray) (normalized into 0 mean and 90/180 max/min)
-        - returns Nx3 array of Cartesian coordinates in km
+        Convert lat/lon to 3D Cartesian coordinates using DSK ray-surface intersection.
+
+        Parameters:
+            lat (float or np.ndarray): Latitude(s) in degrees.
+            lon (float or np.ndarray): Longitude(s) in degrees.
+
+        Returns:
+            np.ndarray: Shape (3,) or (N, 3) array of Cartesian coordinates in km.
         """
         return self.dsk_latlon_to_cartesian(lat, lon, self.filename)
 
@@ -184,9 +213,16 @@ class DetailedModelDSKKernel(BaseKernel):
         alt_km: float = 10000.0,  # Good enough for Moon
     ) -> np.ndarray:
         """
-        Convert lat/lon to Cartesian (X, Y, Z) coordinates using DSK surface intersection.
-        - lat, lon in degrees (can be float or np.ndarray)
-        - returns Nx3 array of Cartesian coordinates in km
+        Static version of lat/lon to Cartesian intersection using an arbitrary DSK path.
+
+        Parameters:
+            lat (float or np.ndarray): Latitude(s) in degrees.
+            lon (float or np.ndarray): Longitude(s) in degrees.
+            dsk_path (str): Path to the DSK file.
+            alt_km (float): Altitude of ray origin in km (default 10,000 km).
+
+        Returns:
+            np.ndarray: Shape (3,) or (N, 3) array of Cartesian coordinates in km.
         """
         lat = np.radians(lat)
         lon = np.radians(lon)
@@ -212,6 +248,12 @@ class DetailedModelDSKKernel(BaseKernel):
         return results[0] if scalar_input else np.array(results)
 
     def remote_dsk_download(self):
+        """
+        Download pre-generated DSK file from BunnyCDN storage.
+
+        Raises:
+            HTTPError: If the remote request fails.
+        """
         url = urljoin(BUNNY_BASE_URL, f"{BUNNY_STORAGE}")
         url = urljoin(url, f"{self.filename.split('/')[-1]}")
         with requests.get(url, headers={"AccessKey": BUNNY_PASSWORD}, stream=True) as r:
@@ -238,6 +280,12 @@ class DetailedModelDSKKernel(BaseKernel):
                         t.update(len(chunk))  # Update progress bar
 
     def download_tif_file(self):
+        """
+        Download the high-resolution elevation TIF file from USGS to local cache.
+
+        Raises:
+            HTTPError: If the request fails.
+        """
         with requests.get(self.url, stream=True) as r:
             r.raise_for_status()
             total_size = int(r.headers.get("content-length", 0))
@@ -261,6 +309,12 @@ class DetailedModelDSKKernel(BaseKernel):
                         t.update(len(chunk))
 
     def create_xyz_from_tif(self):
+        """
+        Convert the downloaded TIF to XYZ format using GDAL CLI with specified downsampling.
+
+        Raises:
+            RuntimeError: If the GDAL CLI fails to produce output.
+        """
         command = [
             "gdal_translate",
             "-of",
@@ -284,6 +338,19 @@ class DetailedModelDSKKernel(BaseKernel):
             raise RuntimeError(f"Failed to convert TIF to XYZ: {result.stderr}")
 
     def create_dsk_from_xyz(self):
+        """
+        Process the XYZ file to generate a triangulated mesh and write a DSK segment.
+
+        Steps:
+            - Convert XYZ to spherical coordinates.
+            - Apply cosine-weighted downsampling along latitudes.
+            - Generate triangle mesh.
+            - Compute voxel spatial index.
+            - Write to DSK via SPICE's `dskw02`.
+
+        Raises:
+            AssertionError: If grid shape is inconsistent.
+        """
         df = pd.read_csv(self.xyz_filename, sep=" ", names=["x", "y", "z"])
         # Extract coordinates
         x = df["x"].to_numpy()

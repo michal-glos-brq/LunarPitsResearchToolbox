@@ -1,4 +1,22 @@
-"""This file implements Base class for instruments. Instruments themselves do not manage any SPICE kernels directly, it assumes all required kernels are loaded (otherwise an exception is throwed)"""
+"""
+====================================================
+SPICE Kernel Management Module
+====================================================
+
+Author: Michal Glos
+University: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Diploma Thesis Project
+
+This module defines the BaseInstrument class, which provides a standard
+interface for lunar satellite instruments simulated using SPICE.
+
+It includes:
+    - Abstract fields for name, frame, spacecraft ID, and sub-instruments.
+    - Computation of spacecraft position and velocity.
+    - Vector projection (boresight and FOV bounds) onto the Moon's surface.
+    - Geometry-based FOV intersection support.
+"""
 
 import logging
 from abc import ABC, abstractmethod
@@ -18,7 +36,23 @@ logger = logging.getLogger(__name__)
 
 
 class BaseInstrument(ABC):
-    """This class serves the purpose of defining all the configurable attributes of instruments"""
+    """
+    Abstract base class representing a remote sensing instrument.
+
+    Provides a general interface for instrument-specific geometry, including:
+        - Boresight vector averaging from sub-instruments
+        - Surface projection of boresight and bounds
+        - FOV-to-point intersection metrics
+        - Spacecraft position/velocity queries
+
+    Subclasses must define:
+        - `name`: Unique instrument identifier.
+        - `frame`: SPICE instrument reference frame.
+        - `satellite_name`: SPICE satellite identifier.
+        - `sub_instruments`: List of SubInstrument instances.
+
+    Supports both static and dynamic instruments.
+    """
 
     STATIC_INSTRUMENT = False
     DYNAMIC_KERNEL_OFFSET_JD = 0
@@ -28,6 +62,11 @@ class BaseInstrument(ABC):
     _orbiting_body = "MOON"
 
     def __init__(self):
+        """
+        Initialize default attributes and placeholders for geometric projections.
+
+        Subclasses do not override this unless internal geometry model is different.
+        """
         # Static boresight - aggregated boresight in static frame, used for instruments with dynamic boresight relatively to the satellite
         self._static_boresight, self._static_boresight_frame = None, None
         self._static_bounds, self._static_bounds_frame = None, None
@@ -37,29 +76,38 @@ class BaseInstrument(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Instrument name, string ID"""
+        """Unique string identifier of the instrument."""
         ...
 
     @property
     @abstractmethod
     def frame(self) -> str:
-        """Frame of the instrument"""
+        """SPICE reference frame used by the instrument."""
         ...
 
     @property
     @abstractmethod
     def satellite_name(self) -> str:
-        """Satellite name, string ID (SPICE kernel ID) - spacecraft position"""
+        """SPICE spacecraft ID for retrieving position/velocity."""
         ...
 
     @property
     @abstractmethod
     def sub_instruments(self) -> List[SubInstrument]:
-        """List of subinstrument objects"""
+        """List of SubInstrument instances defining the geometry."""
         ...
 
     def calculate_spacecraft_position(self, et: float, frame: str) -> np.array:
-        """Returns spacecraft position in the given frame at the given time"""
+        """
+        Get spacecraft position at the specified ephemeris time.
+
+        Parameters:
+            et (float): Ephemeris time in seconds past J2000.
+            frame (str): Target reference frame for the result.
+
+        Returns:
+            np.array: 3D Cartesian position vector in kilometers.
+        """
         return spice.spkpos(self.satellite_name, et, frame, "NONE", self._orbiting_body)[0]
 
     def calculate_spacecraft_position_and_velocity(self, et: float, frame: str) -> Tuple[np.array]:
@@ -67,12 +115,17 @@ class BaseInstrument(ABC):
         state = spice.spkezr(self.satellite_name, et, frame, "NONE", self._orbiting_body)[0]
         return state[:3], state[3:]
 
-    def recalculate_bounds_to_boresight_distance(self, et: float = 0) -> np.array:
+    def recalculate_bounds_to_boresight_distance(self, et: float = 0) -> float:
         """
-        Recalculates distance from boresight to bounds
+        Recalculate the maximum angular distance from the boresight to the instrument bounds.
 
-        So we can add this to the distance from point of interest and with point of interest and projected boresight -
-            we can tell wether instrument FOV is intersecting the point of interest
+        Used to determine angular FOV spread for hit-testing projection intersections.
+
+        Parameters:
+            et (float): Ephemeris time to project at.
+
+        Returns:
+            float: Maximum distance in km between projected bounds and boresight.
         """
         self._last_recalculation_et = et
         projection = self.project_boresight(et).projection
@@ -81,9 +134,20 @@ class BaseInstrument(ABC):
         # projected_bounds = np.stack([self.project_vector(et, bnd).projection for bnd in self.bounds(et)])
         return np.linalg.norm(projected_bounds - projection, axis=1).max()
 
-    ### Boresight and bounds assume subinstruments are normalized into the same frame
+
     def boresight(self, et: float = 0) -> np.array:
-        """Boresight vector for the instrument"""
+        """
+        Get the current boresight vector at the given time.
+
+        Combines static boresights of all subinstruments into a single vector,
+        applying transformation if the instrument is not static.
+
+        Parameters:
+            et (float): Ephemeris time.
+
+        Returns:
+            np.array: 3D unit boresight vector.
+        """
         if self._static_boresight is None:
             # Arbitrary choose the first frame - those frames are static relative to boresights
             self._static_boresight_frame = (
@@ -101,7 +165,15 @@ class BaseInstrument(ABC):
             return self.sub_instruments[0].transform_vector(self.frame, self._static_boresight, et)
 
     def bounds(self, et: float = 0) -> np.array:
-        """Bounds of the instrument"""
+        """
+        Get the current FOV bounds vectors at the given time.
+
+        Parameters:
+            et (float): Ephemeris time.
+
+        Returns:
+            np.array: N×3 array of bound vectors.
+        """
         if self._static_bounds is None:
             # Arbitrary choose the first frame - those frames are static relative to boresights
             self._static_bounds_frame = (
@@ -120,9 +192,18 @@ class BaseInstrument(ABC):
 
     def project_vector(self, et, vector, use_ellipsoid: bool = False) -> np.array:
         """
-        Projects a vector pointing from satellite_name, onto the lunar surface. Return intersection of surface and vector in cartesian coordinates
+        Project a direction vector from the spacecraft to the lunar surface.
 
-        Takes vector in self.frame and projects it - expects subinstrument vector to be tranformed into the self.frame already
+        Uses SPICE's `sincpt` to find intersection point with the Moon's surface,
+        either via DSK or ellipsoid approximation.
+
+        Parameters:
+            et (float): Ephemeris time.
+            vector (np.array): Direction vector in `self.frame`.
+            use_ellipsoid (bool): Whether to use the ellipsoid model.
+
+        Returns:
+            ProjectionPoint: Resulting intersection with the surface.
         """
         # https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/sincpt_c.html
         boresight_point, boresight_trgepc, spacecraft_relative = spice.sincpt(
@@ -139,12 +220,24 @@ class BaseInstrument(ABC):
 
     def project_boresight(self, et) -> ProjectionPoint:
         """
-        Project subinstrument-mean boresight onto lunar surface
+        Project the instrument’s central boresight vector onto the lunar surface.
+
+        Parameters:
+            et (float): Ephemeris time.
+
+        Returns:
+            ProjectionPoint: Surface intersection of boresight.
         """
         return self.project_vector(et, self.boresight(et))
 
     def project_bounds(self, et) -> List[ProjectionPoint]:
         """
-        Projects bounds onto lunar surface
+        Project all bound vectors of the instrument onto the lunar surface.
+
+        Parameters:
+            et (float): Ephemeris time.
+
+        Returns:
+            List[ProjectionPoint]: Surface intersections for each bound vector.
         """
         return [self.project_vector(et, bnd) for bnd in self.bounds(et)]

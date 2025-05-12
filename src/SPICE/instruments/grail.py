@@ -1,3 +1,14 @@
+"""
+====================================================
+SPICE Kernel Management Module
+====================================================
+
+Author: Michal Glos
+University: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Diploma Thesis Project
+"""
+
 from src.SPICE.instruments.instrument import BaseInstrument
 from src.SPICE.instruments.subinstruments import SubInstrument
 from src.SPICE.config import GRAIL_A_INSTRUMENTS, GRAIL_B_INSTRUMENTS

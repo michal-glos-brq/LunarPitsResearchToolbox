@@ -33,10 +33,16 @@ from src.SPICE.config import (
 logger = logging.getLogger(__name__)
 
 
-
-
 class BaseKernel:
-    """Base implementation of SPICE kernel"""
+    """
+    Base implementation of a SPICE kernel abstraction.
+
+    Handles downloading, loading, unloading, and file lifecycle management of a single kernel.
+    Includes concurrency-safe downloading with file locking and shared usage registration
+    to prevent accidental deletion in multi-process setups.
+
+    Intended to be subclassed for kernels with specific behaviors (e.g. LBL parsing, metadata support).
+    """
 
     url: str
     filename: str
@@ -55,16 +61,29 @@ class BaseKernel:
 
     @property
     def file_exists(self) -> bool:
-        """Check if the local kernel file exists"""
+        """
+        Check whether the kernel file exists locally on disk.
+
+        Returns:
+            bool: True if the file exists, False otherwise.
+        """
         return os.path.exists(self.filename)
 
     def ensure_downloaded(self) -> None:
-        """Make sure the kernel is downloaded"""
+        """
+        Ensure the kernel file is downloaded locally.
+
+        If not present, triggers a download. Uses locking to prevent concurrent downloads.
+        """
         if not self.file_exists:
             self.download_file(self.url, self.filename)
 
     def unload(self) -> None:
-        """Unload the kernel from spiceypy"""
+        """
+        Unload the kernel from SPICE, release usage lock, and optionally delete the file.
+
+        If the kernel is not loaded, this is a no-op for SPICE but still manages the lock and file cleanup.
+        """
         if self._loaded:
             spice.unload(self.filename)
             self._loaded = False
@@ -77,7 +96,12 @@ class BaseKernel:
             self.delete_file()
 
     def load(self) -> None:
-        """Ensure the kernel is downloaded and load it into spiceypy."""
+        """
+        Load the kernel into SPICE (furnsh), downloading it if necessary.
+
+        Handles retry and fallback in case of SPICE load errors.
+        Ensures the kernel is marked as loaded only on successful SPICE load.
+        """
         if not self._loaded:
             self.ensure_downloaded()
             try:
@@ -94,7 +118,11 @@ class BaseKernel:
             logger.debug("Kernel %s is already loaded", self.filename)
 
     def delete_file(self) -> None:
-        """Delete the file from disk"""
+        """
+        Schedule the kernel file for asynchronous deletion, respecting shared file use lock.
+
+        Safe to call multiple times; deletion only proceeds when all users have released the file.
+        """
         if self.file_exists:
             threading.Thread(target=lambda: self._lock.try_delete_file(), daemon=True).start()
             logger.debug("Scheduled async deletion of kernel file %s", self.filename)
@@ -108,14 +136,29 @@ class BaseKernel:
         if actual != expected:
             raise ValueError(f"Size mismatch: expected {expected} bytes, got {actual} bytes")
 
-
     @staticmethod
     def temp_filename(filename: str):
-        """Generate a temporary filename for downloading."""
+        """
+        Generate a temporary filename for the given final filename.
+
+        Used during partial/resumable downloads.
+
+        Returns:
+            str: Path to the temporary file.
+        """
         return filename + ".tmp"
 
-
     def download_file(self, url: str, filename: str) -> None:
+        """
+        Safely download a file to disk using locking to prevent concurrent access.
+
+        Handles corrupted downloads, zero-byte files, and ensures the downloaded file is complete
+        by checking expected size (if provided by the server).
+
+        Parameters:
+            url (str): Source URL of the file.
+            filename (str): Target path on local disk.
+        """
         tmp_filename = self.temp_filename(filename)
         with FileLock(
             tmp_filename + ".lock", timeout=SPICE_KERNEL_LOCK_DOWNLOAD_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL
@@ -134,11 +177,16 @@ class BaseKernel:
                         if os.path.exists(tmp_filename):
                             os.remove(tmp_filename)
 
-    
     def _download_file(self, url: str, filename: str) -> None:
         """
-        Synchronously download the file with resume support and retries.
-        Includes file size verification using expected Content-Length.
+        Internal low-level file downloader with resume support and retry logic.
+
+        Downloads to a temporary file, validates file size against Content-Length or Content-Range,
+        and renames to the final file on success. Cleans up on failure.
+
+        Parameters:
+            url (str): URL of the remote kernel file.
+            filename (str): Local filename (final target).
         """
         retries = 0
         temp_path = self.temp_filename(filename)
@@ -219,5 +267,3 @@ class BaseKernel:
 
     def __repr__(self):
         return f"<BaseKernel filename='{self.filename}'>"
-
-

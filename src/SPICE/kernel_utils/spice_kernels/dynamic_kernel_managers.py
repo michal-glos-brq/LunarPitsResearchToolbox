@@ -34,9 +34,16 @@ from src.SPICE.kernel_utils.spice_kernels.base_dynamic_kernel_manager import Dyn
 logger = logging.getLogger(__name__)
 
 
-
-
 class LBLDynamicKernelLoader(DynamicKernelManager):
+    """
+    Dynamic kernel loader for LBL (labelled) SPICE kernels.
+
+    This subclass parses metadata files (e.g., .LBL) alongside kernel files
+    to extract valid time intervals. It supports filtering, downloading,
+    and managing a pool of LBLDynamicKernel instances.
+
+    Metadata and kernel filenames are filtered using separate regex patterns.
+    """
 
     def __init__(
         self,
@@ -52,18 +59,19 @@ class LBLDynamicKernelLoader(DynamicKernelManager):
         time_intervals: Optional[Tuple[Time, Time]] = None,
     ):
         """
-        path: local path to dynamic kernel folder
-        base_url: remote location of dynamic kernels
-        regex: filter all files from local path to get desired kernels
-        metadata_regex: filter all files with metadata, implicitly .lbl files
-        keep_kernels: if True, downloaded files are stored on disk. If false, once data are unloaded,
-                    corresponding files are deleted
-        pre_download_kernels: if True, all kernels are downloaded at initialization (if not already on the disk)
-        load_callbakcs: list of tuples with callback functions, their arguments and keyword arguments. Checks for correct
-            loading of kernels. Could throw exception once to load it properly, throwing 2 means something went wrong.
-            First element of the iterable is reserved for et (placeholder is needed when defining the callbacks)
-            (commented out for now, but in case it would be needed, uncommenting the code will bring it back to life)
-        time_intervals: Optional[Tuple[Time, Time]] = None - This is another way of contraining the required time to load (sorted)
+        Initialize the LBLDynamicKernelLoader.
+
+        Parameters:
+            path (str): Local directory where kernels and metadata will be stored.
+            base_url (str): Base URL of the remote kernel directory.
+            regex (str): Regex to match valid kernel filenames.
+            metadata_regex (str): Regex to match valid metadata (.lbl) filenames.
+            keep_kernels (bool): If False, downloaded files will be deleted after unloading.
+            pre_download_kernels (bool): If True, kernels will be downloaded at initialization.
+            prefetch_kernels (int): Number of kernels to prefetch asynchronously.
+            min_time_to_load (Optional[Time]): Minimum time to retain kernels.
+            max_time_to_load (Optional[Time]): Maximum time to retain kernels.
+            time_intervals (Optional[Tuple[Time, Time]]): List of explicit time intervals to keep.
         """
         self.metadata_regex = re.compile(metadata_regex)
         super().__init__(
@@ -80,14 +88,25 @@ class LBLDynamicKernelLoader(DynamicKernelManager):
 
     def parse_kernel_time_bounds(self, filename, url) -> Dict:
         """
-        Is not being used, have to be overwritten, because is abstract in the parent class
+        Required abstract method (unused).
+
+        Not needed because time bounds are parsed from LBL metadata
+        during `load_metadata()`.
         """
         ...
 
     def load_metadata(self) -> List[LBLDynamicKernel]:
         """
-        Creates a list of dynamic kernels by crawling the base_url
-        Reads their time intervals
+        Crawl remote directory and initialize LBLDynamicKernel instances.
+
+        For each kernel-metadata pair:
+            - Download metadata (if needed).
+            - Parse time interval via `get_time_interval()`.
+            - Filter by time constraints.
+            - Populate and sort the kernel pool.
+
+        Returns:
+            List[LBLDynamicKernel]: Loaded and filtered kernel list.
         """
         response = requests.get(self.base_url)
         soup = bs(response.text, "html.parser")
@@ -131,12 +150,27 @@ class LBLDynamicKernelLoader(DynamicKernelManager):
 
 
 class LROCDynamicKernelLoader(DynamicKernelManager):
+    """
+    Dynamic kernel loader for LROC (Lunar Reconnaissance Orbiter Camera) kernels.
+
+    Time bounds are parsed from filenames using a fixed YYYYDDD_YYYYDDD pattern.
+    """
+
     FILENAME_PATTERN = re.compile(r"lrolc_(\d{7})_(\d{7})")
 
     def parse_kernel_time_bounds(self, filename: str, url: str) -> Dict[str, Time]:
         """
-        Extracts time_start and time_stop from filenames matching the LROC kernel pattern.
-        Expected format: lrolc_YYYYDDD_YYYYDDD.*
+        Extract time interval from filename using regex.
+
+        Parameters:
+            filename (str): Filename of the SPICE kernel.
+            url (str): URL to the remote file (unused, for interface consistency).
+
+        Returns:
+            Dict[str, Time]: Dictionary with `time_start` and `time_stop` keys.
+
+        Raises:
+            ValueError: If filename does not match the expected pattern.
         """
         match = self.FILENAME_PATTERN.search(filename)
         if not match:
@@ -154,16 +188,29 @@ class LROCDynamicKernelLoader(DynamicKernelManager):
 
 class PriorityKernelLoader:
     """
-    Manages multiple kernel loaders with priority order.
-    Ensures at least one kernel covers the given time.
+    Manager of multiple kernel loaders with fallback priority.
+
+    Tries each kernel manager in order until one can handle the requested time.
+    This allows composition of multiple independent datasets with partial coverage.
     """
 
     def __init__(self, kernel_managers: Sequence[LBLDynamicKernelLoader]) -> None:
+        """
+        Initialize the priority-based kernel manager.
+
+        Parameters:
+            kernel_managers (Sequence): Ordered list of kernel loaders to manage.
+        """
         self.kernel_managers = kernel_managers
 
     @property
     def min_loaded_time(self) -> Optional[Time]:
-        """Earliest time covered by any loader"""
+        """
+        Get the earliest time covered by any managed loader.
+
+        Returns:
+            Optional[Time]: Earliest start time, or None if no loader has data.
+        """
         if not self.kernel_managers:
             return None
 
@@ -171,15 +218,25 @@ class PriorityKernelLoader:
 
     @property
     def max_loaded_time(self) -> Optional[Time]:
-        """Latest time covered by any loader"""
+        """
+        Get the latest time covered by any managed loader.
+
+        Returns:
+            Optional[Time]: Latest stop time, or None if no loader has data.
+        """
         if not self.kernel_managers:
             return None
         return max(km.max_loaded_time for km in self.kernel_managers if km.max_loaded_time is not None)
 
     def reload_kernels(self, time: Time) -> bool:
         """
-        Attempt to reload kernels for the given time.
-        Returns True if any loader handled it.
+        Reload a kernel for the given time from the first capable loader.
+
+        Parameters:
+            time (Time): Target time to load.
+
+        Returns:
+            bool: True if any loader handled it, False if none could.
         """
         for i, km in enumerate(self.kernel_managers):
             if km.reload_kernels(time):
@@ -189,8 +246,8 @@ class PriorityKernelLoader:
         return False
 
     def unload(self) -> None:
-        """Unload all kernels from all managers"""
+        """
+        Unload all kernels from all managed loaders.
+        """
         for km in self.kernel_managers:
             km.unload()
-
-

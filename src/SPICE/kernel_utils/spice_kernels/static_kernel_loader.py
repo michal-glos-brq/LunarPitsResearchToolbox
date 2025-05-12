@@ -24,9 +24,23 @@ logger = logging.getLogger(__name__)
 
 
 class StaticKernelLoader:
-    """Downloads and loads a static group of SPICE kernels from disk or remote."""
+    """
+    Loader for a static group of SPICE kernels.
+
+    Accepts an OrderedDict mapping kernel categories to lists of BaseKernel instances.
+    Automatically downloads all kernels in parallel using a thread pool and provides methods
+    for loading and unloading them into/from SPICE.
+
+    Typically used for kernels that don't require dynamic time filtering (e.g., planetary constants, frames, etc.).
+    """
 
     def __init__(self, kernel_objects: OrderedDict[str, List[BaseKernel]]):
+        """
+        Initialize the loader and download all static kernels if not already available.
+
+        Parameters:
+            kernel_objects (OrderedDict): Mapping of kernel category to list of BaseKernel instances.
+        """
         # We want to aggregate all kernels in one list while retaining its order
         self.kernel_pool = [kernel for kernels in kernel_objects.values() for kernel in kernels]
         pbar = tqdm(
@@ -46,6 +60,11 @@ class StaticKernelLoader:
         pbar.close()
 
     def load(self):
+        """
+        Load all downloaded static kernels into SPICE.
+
+        Logs the operation and skips if no kernels are present.
+        """
         logger.debug("Loading %d static kernels...", len(self.kernel_pool))
         if not self.kernel_pool:
             logger.warning("No kernels to load.")
@@ -53,6 +72,11 @@ class StaticKernelLoader:
             kernel.load()
 
     def unload(self):
+        """
+        Unload all static kernels from SPICE.
+
+        Also logs the operation. Skips if no kernels are present.
+        """
         logger.debug("Unloading %d static kernels...", len(self.kernel_pool))
         if not self.kernel_pool:
             logger.warning("No kernels to unload.")
