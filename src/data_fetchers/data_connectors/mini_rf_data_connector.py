@@ -1,3 +1,15 @@
+"""
+============================================================
+MiniRF Data Connector providing interface from MiniRF dataset
+============================================================
+
+Author: Michal Glos
+University: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Diploma Thesis Project
+"""
+
+
 import os
 import pvl
 import urllib

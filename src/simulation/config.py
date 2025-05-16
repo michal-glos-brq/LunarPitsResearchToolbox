@@ -1,3 +1,14 @@
+"""
+============================================================
+Simulation configuration module
+============================================================
+
+Author: Michal Glos
+University: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Diploma Thesis Project
+"""
+
 # This is DIVINER sampling rate and poses as a reasonable base timestep for the simulation
 SIMULATION_STEP = 1.024
 # SIMULATION_STEP = 1.024 * 3600 # Testing purposes - whether it can run full sim and not crash

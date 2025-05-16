@@ -1,3 +1,14 @@
+"""
+============================================================
+Base implementation for data connector
+============================================================
+
+Author: Michal Glos
+University: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Diploma Thesis Project
+"""
+
 import logging
 import requests
 import random

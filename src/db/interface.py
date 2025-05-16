@@ -1,8 +1,17 @@
 """
+============================================================
+Dataclass for instrument projection onto a body surface
+============================================================
+
+Author: Michal Glos
+University: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Diploma Thesis Project
+
 This is the interface to our Mongo DB. Mongo is exploited as a centralized, persistent storage accessible over the network.
 It's purpose is to extract all DB work into this file
 
-A lot of redundant and overly-specific  use cases to general use case functionalities are implemented - refactoring needed.
+A lot of redundant and overly-specific  use cases to general use case functionalities are implemented - refactoring eventually needed.
 """
 
 import time
@@ -496,6 +505,16 @@ class Sessions:
         return collection
 
     @staticmethod
+    def get_extraction_collection(instrument_name: str):
+        """
+        Returns the extraction collection for the given instrument name.
+        """
+        session = Sessions.get_db_session(EXTRACTOR_DB_NAME)
+        collection = session[instrument_name]
+        return collection
+
+
+    @staticmethod
     def prepare_extraction_metadata(extraction_metadata: dict) -> bool:
         """
         Checks if a finished extraction metadata record already exists that matches the following fields:
@@ -535,7 +554,9 @@ class Sessions:
             return False
 
     @staticmethod
-    def start_background_update_extraction_metadata(metadata_id, current_time_datetime: datetime, finished=None, metadata=None):
+    def start_background_update_extraction_metadata(
+        metadata_id, current_time_datetime: datetime, finished=None, metadata=None
+    ):
         """
         Spawns a background thread to update the simulation metadata document.
         """
@@ -568,8 +589,6 @@ class Sessions:
         }
         collection.delete_many(query)
         logging.info(f"Removed data from failed task runs for {extraction_name} between {start_et} and {end_et}.")
-        
-        
 
     ##########################################################################################
     #####                               Background Tasks                                 #####

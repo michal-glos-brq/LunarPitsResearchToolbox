@@ -1,4 +1,13 @@
 """
+============================================================
+Dataclass for instrument projection onto a body surface
+============================================================
+
+Author: Michal Glos
+University: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Diploma Thesis Project
+
 This file serves as a central configuration file for the MongoDB related code, saved in src/mongo
 """
 

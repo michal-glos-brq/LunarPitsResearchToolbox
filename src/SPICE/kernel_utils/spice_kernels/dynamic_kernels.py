@@ -20,14 +20,14 @@ from tqdm import tqdm
 from src.SPICE.config import (
     KERNEL_TIME_KEYS,
 )
-from src.SPICE.kernel_utils.spice_kernels.base_static_kernel import BaseKernel
+from src.SPICE.kernel_utils.spice_kernels.base_kernel import BaseKernel
 from src.SPICE.kernel_utils.spice_kernels.static_kernels import LBLKernel
 
 
 logger = logging.getLogger(__name__)
 
 
-class TimeBoundKernel(BaseKernel):
+class DynamicKernel(BaseKernel):
     """
     SPICE kernel subclass with a defined valid time interval.
 
@@ -71,11 +71,11 @@ class TimeBoundKernel(BaseKernel):
         return self.time_start <= time <= self.time_stop
 
 
-class LBLDynamicKernel(LBLKernel, TimeBoundKernel):
+class LBLDynamicKernel(LBLKernel, DynamicKernel):
     """
     Dynamic SPICE kernel using a corresponding .LBL metadata file to define time validity.
 
-    Combines label parsing (from LBLKernel) with time-bound filtering (from TimeBoundKernel).
+    Combines label parsing (from LBLKernel) with time-bound filtering (from DynamicKernel).
     """
 
     def __init__(self, url, filename, metadata_url, metadata_filename, keep_kernel: bool = True):
@@ -93,7 +93,7 @@ class LBLDynamicKernel(LBLKernel, TimeBoundKernel):
         self.time_start = None
         self.time_stop = None
 
-    def get_time_interval(self, pbar: tqdm) -> bool:
+    def get_time_interval(self, pbar: Optional[tqdm] = None) -> bool:
         """
         Download and parse the associated .LBL metadata to extract time bounds.
 
@@ -122,23 +122,3 @@ class LBLDynamicKernel(LBLKernel, TimeBoundKernel):
             pbar.update(1)
         return True
 
-
-class DynamicKernel(TimeBoundKernel):
-    """
-    Time-constrained kernel with known start and stop times at initialization.
-
-    Simple wrapper around `TimeBoundKernel`, used when no metadata parsing is needed.
-    """
-
-    def __init__(self, url: str, filename: str, time_start: Time, time_stop: Time, keep_kernel: bool = True):
-        """
-        Initialize a SPICE kernel with explicit time interval.
-
-        Parameters:
-            url (str): Remote URL of the kernel.
-            filename (str): Local file path.
-            time_start (Time): Start of the valid interval.
-            time_stop (Time): End of the valid interval.
-            keep_kernel (bool): If False, the file is deleted after unloading.
-        """
-        super().__init__(url, filename, time_start, time_stop, keep_kernel=keep_kernel)

@@ -9,9 +9,9 @@ Faculty: Faculty of Electrical Engineering and Communication (FEKT)
 Diploma Thesis Project
 """
 
-from src.SPICE.kernel_utils.spice_kernels.base_static_kernel import BaseKernel
+from src.SPICE.kernel_utils.spice_kernels.base_kernel import BaseKernel
 from src.SPICE.kernel_utils.spice_kernels.static_kernels import AutoUpdateKernel, LBLKernel
-from src.SPICE.kernel_utils.spice_kernels.dynamic_kernels import TimeBoundKernel, LBLDynamicKernel, DynamicKernel
+from src.SPICE.kernel_utils.spice_kernels.dynamic_kernels import LBLDynamicKernel, DynamicKernel
 
 from src.SPICE.kernel_utils.spice_kernels.static_kernel_loader import StaticKernelLoader
 
@@ -27,7 +27,6 @@ __all__ = [
     "BaseKernel",
     "AutoUpdateKernel",
     "LBLKernel",
-    "TimeBoundKernel",
     "DynamicKernel",
     "LBLDynamicKernel",
     "StaticKernelLoader",

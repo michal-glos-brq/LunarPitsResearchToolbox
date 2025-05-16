@@ -39,17 +39,3 @@ typecheck:
 docker-clean:
 	@docker image prune -f
 
-
-
-# One af task assignement for simulation, 1st retry
-# ./assign_tasks.py --task remote_sensing --config-name lunar_pit_atlas_mapping_LRO_simulation --name full_run --retry-count 1
-# Dry run of dummy example run
-# ./src/manual_scripts/assign_tasks.py --config-name test_lro_short_simulation --name demo_run  --task remote_sensing
-
-# How to make intervals from the simulation runs
-# ./src/manual_scripts/aggregate_simulation_intervals.py \
-  --config-name lunar_pit_atlas_mapping_LRO_simulation \
-  --sim-name lunar_pit_run \
-  --interval-name test_lunar_pit_run \
-  --threshold 5
-

@@ -1,3 +1,15 @@
+"""
+============================================================
+CLI interface to assign tasks to workers from master
+============================================================
+
+Author: Michal Glos
+University: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Diploma Thesis Project
+"""
+
+
 #! /usr/bin/env python3
 
 import argparse

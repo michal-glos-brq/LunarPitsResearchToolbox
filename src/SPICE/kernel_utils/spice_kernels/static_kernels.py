@@ -17,7 +17,7 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup as bs
 
-from src.SPICE.kernel_utils.spice_kernels.base_static_kernel import BaseKernel
+from src.SPICE.kernel_utils.spice_kernels.base_kernel import BaseKernel
 
 logger = logging.getLogger(__name__)
 

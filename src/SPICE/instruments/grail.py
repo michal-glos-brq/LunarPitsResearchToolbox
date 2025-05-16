@@ -20,6 +20,8 @@ class GrailAInstrument(BaseInstrument):
     satellite_name = "GRAIL-A"
     frame = "GRAIL-A_STA"
 
+    _orbiting_body = "MOON"
+
     _sub_instruments = None
 
     @property
@@ -33,6 +35,8 @@ class GrailBInstrument(BaseInstrument):
     name = "GRAIL-B"
     satellite_name = "GRAIL-B"
     frame = "GRAIL-B_STA"
+
+    _orbiting_body = "MOON"
 
 
     _sub_instruments = None

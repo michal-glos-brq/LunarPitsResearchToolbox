@@ -1,3 +1,14 @@
+"""
+====================================================
+Semaphore for file usage
+====================================================
+
+Author: Michal Glos
+University: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Diploma Thesis Project
+"""
+
 import os
 import uuid
 import errno

@@ -1,3 +1,14 @@
+"""
+============================================================
+Base filter implementation
+============================================================
+
+Author: Michal Glos
+University: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Diploma Thesis Project
+"""
+
 from abc import ABC, abstractmethod
 
 import numpy as np

@@ -18,7 +18,7 @@ from tqdm import tqdm
 
 from src.global_config import TQDM_NCOLS, SUPRESS_TQDM
 from src.SPICE.config import MAX_KERNEL_DOWNLOADS
-from src.SPICE.kernel_utils.spice_kernels.base_static_kernel import BaseKernel
+from src.SPICE.kernel_utils.spice_kernels.base_kernel import BaseKernel
 
 logger = logging.getLogger(__name__)
 

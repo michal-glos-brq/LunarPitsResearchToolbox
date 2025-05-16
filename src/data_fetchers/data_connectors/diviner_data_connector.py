@@ -1,6 +1,12 @@
 """
-WARNING: When assigning tasks, we are looking for separate day datasets, but there are some 0.1s overlaps. If you
-do not want to risk data loss by omission, assign the tasks with times in the middle of the day
+============================================================
+DIVINER Data Connector providing interface to DIVINER data
+============================================================
+
+Author: Michal Glos
+University: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Diploma Thesis Project
 """
 
 import zipfile

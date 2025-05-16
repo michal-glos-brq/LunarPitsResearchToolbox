@@ -53,5 +53,7 @@ run_remote_sensing_simulation_task = app.task(
 run_data_extraction_task = app.task(
     name="src.pipeline.tasks.extractor.run_data_extraction",
     bind=True,
+    autoretry_for=(),
+    retry_kwargs={'max_retries': 0},
 )(run_data_extraction)
 

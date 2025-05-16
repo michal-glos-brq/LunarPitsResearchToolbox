@@ -55,11 +55,11 @@ class BaseInstrument(ABC):
     """
 
     STATIC_INSTRUMENT = False
-    DYNAMIC_KERNEL_OFFSET_JD = 0
-    # Use arbitrary absurd default values, until it's possible to be computed
+    # Approximate values for estimation when there is no data yet and SPICE transformation could not be calculated
     _fov_width = 10000
     _height = 1000000
-    _orbiting_body = "MOON"
+    # SPICE ID of the orbiting body (e.g., Moon)
+    _orbiting_body = None
 
     def __init__(self):
         """

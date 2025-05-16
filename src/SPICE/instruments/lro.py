@@ -33,6 +33,7 @@ class DivinerInstrument(BaseInstrument):
     satellite_name = LRO_STR_ID
     # LRO spacecraft attitude frame
     frame = "LRO_SC_BUS"
+    _orbiting_body = "MOON"
     # Default FOV and height in case initialization is in time of failure for this instrument
     _fov_width = 610
     _height = 180
@@ -55,6 +56,7 @@ class LolaInstrument(BaseInstrument):
     satellite_name = LRO_STR_ID
     # LRO spacecraft attitude frame
     frame = "LRO_SC_BUS"
+    _orbiting_body = "MOON"
     # Default FOV and height in case initialization is in time of failure for this instrument
     _fov_width = 1
     _height = 340
@@ -76,6 +78,7 @@ class MiniRFInstrument(BaseInstrument):
     satellite_name = LRO_STR_ID
     # LRO spacecraft attitude frame
     frame = "LRO_SC_BUS"
+    _orbiting_body = "MOON"
     # Default FOV and height in case initialization is in time of failure for this instrument
     _fov_width = 80
     _height = 300
@@ -114,6 +117,7 @@ class LROCNACInstrument(BaseInstrument):
     satellite_name = LRO_STR_ID
     # We choose a common reference frame (e.g., the LRO spacecraft bus frame)
     frame = "LRO_SC_BUS"
+    _orbiting_body = "MOON"
     # Default FOV and height in case initialization is in time of failure for this instrument
     _fov_width = 45
     _height = 220
@@ -142,6 +146,7 @@ class LROCWACInstrument(BaseInstrument):
     name = "LROC_WAC"
     satellite_name = LRO_STR_ID
     frame = "LRO_SC_BUS"
+    _orbiting_body = "MOON"
     # Default FOV and height in case initialization is in time of failure for this instrument
     _fov_width = 250
     _height = 250

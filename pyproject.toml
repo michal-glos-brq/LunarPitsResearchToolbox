@@ -31,6 +31,9 @@ aiofiles = "^24.1.0"
 pvl = "^1.3.2"
 cachetools = "^5.5.2"
 requests-cache = "^1.2.1"
+pyarrow = "^20.0.0"
+duckdb = "^1.2.2"
+seaborn = "^0.13.2"
 
 [tool.poetry.group.dev.dependencies]
 jupyter = "1.1.1"

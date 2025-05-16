@@ -127,8 +127,6 @@ class LROKernelManagerMixin(BaseKernelManagerMixin):
                 )
             )
         if diviner_ck:
-            # For now, callbacks serve no actual purpose. Left here in case it would be needed
-            # diviner_callback = [ (lambda et: spice.pxform("LRO_DLRE", "LRO_DLRE", et), [0], {}) ]
             self.dynamic_kernels.append(
                 # CK kernels of DIVINER
                 LBLDynamicKernelLoader(

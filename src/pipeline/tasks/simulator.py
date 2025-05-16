@@ -1,3 +1,14 @@
+"""
+============================================================
+FOV simulation celery task
+============================================================
+
+Author: Michal Glos
+University: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Diploma Thesis Project
+"""
+
 import uuid
 import logging
 from typing import Optional, Dict

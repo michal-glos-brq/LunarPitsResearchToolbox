@@ -1,3 +1,14 @@
+"""
+============================================================
+VirtulFile abstraction for dataset files
+============================================================
+
+Author: Michal Glos
+University: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Diploma Thesis Project
+"""
+
 import os
 import requests
 import threading

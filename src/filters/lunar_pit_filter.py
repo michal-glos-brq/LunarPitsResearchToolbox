@@ -1,3 +1,14 @@
+"""
+============================================================
+Filter based on proximity to known lunar pits
+============================================================
+
+Author: Michal Glos
+University: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Diploma Thesis Project
+"""
+
 import numpy as np
 from filelock import FileLock
 
