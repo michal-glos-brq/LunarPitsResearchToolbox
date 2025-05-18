@@ -135,7 +135,7 @@ class LROKernelManager(BaseKernelManager, LunarKernelManagerMixin, LROKernelMana
         )
 
 
-class GRAILKernelManager(LunarKernelManager, GRAILKernelManagerMixin):
+class GRAILKernelManager(BaseKernelManager, LunarKernelManagerMixin, GRAILKernelManagerMixin):
     """
     Kernel manager for GRAIL mission support.
 
