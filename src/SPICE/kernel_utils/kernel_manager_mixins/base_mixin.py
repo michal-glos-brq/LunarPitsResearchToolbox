@@ -9,5 +9,6 @@ Faculty: Faculty of Electrical Engineering and Communication (FEKT)
 Diploma Thesis Project
 """
 
+
 class BaseKernelManagerMixin:
     pass

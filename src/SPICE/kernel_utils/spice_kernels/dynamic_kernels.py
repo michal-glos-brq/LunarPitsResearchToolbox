@@ -121,4 +121,3 @@ class LBLDynamicKernel(LBLKernel, DynamicKernel):
         if pbar:
             pbar.update(1)
         return True
-

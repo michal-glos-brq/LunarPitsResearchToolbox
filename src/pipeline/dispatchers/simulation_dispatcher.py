@@ -1,3 +1,14 @@
+"""
+============================================================
+Dispatcher 
+============================================================
+
+Author: Michal Glos
+University: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Diploma Thesis Project
+"""
+
 import logging
 from typing import Optional
 
@@ -33,7 +44,7 @@ class RemoteSensingTaskRunner(BaseTaskRunner):
             task_kwargs = dict(config["simulation_kwargs"])
             task_kwargs["start_time_isot"] = current_time.isot
             task_kwargs["end_time_isot"] = next_time.isot
-            # It's possible to overrid the name assigned in simulation configuration via CLI parameters
+
             if name is not None:
                 task_kwargs["simulation_name"] = name
             task_kwargs["retry_count"] = retry_count

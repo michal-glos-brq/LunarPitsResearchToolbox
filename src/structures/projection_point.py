@@ -27,7 +27,7 @@ class ProjectionPoint:
             "cy_projected": self.projection[1],
             "cz_projected": self.projection[2],
             "trgepc": self.projection_trgepc,
-            "sc_pos_x" : self.spacecraft_relative[0] + self.projection[0],
-            "sc_pos_y" : self.spacecraft_relative[1] + self.projection[1],
-            "sc_pos_z" : self.spacecraft_relative[2] + self.projection[2],
+            "sc_pos_x": self.spacecraft_relative[0] + self.projection[0],
+            "sc_pos_y": self.spacecraft_relative[1] + self.projection[1],
+            "sc_pos_z": self.spacecraft_relative[2] + self.projection[2],
         }

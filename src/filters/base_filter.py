@@ -14,7 +14,6 @@ from abc import ABC, abstractmethod
 import numpy as np
 
 
-
 class BaseFilter(ABC):
 
     _hard_radius = 0.0
@@ -46,4 +45,3 @@ class BaseFilter(ABC):
         It extracts the DSK filename from the kernel manager and uses it to initialize the filter.
         """
         raise NotImplementedError("This method should be implemented in subclasses.")
-

@@ -85,7 +85,6 @@ class MiniRFInstrument(BaseInstrument):
 
     _sub_instruments = None
 
-
     @property
     def x(self):
         return self.sub_instruments[0]

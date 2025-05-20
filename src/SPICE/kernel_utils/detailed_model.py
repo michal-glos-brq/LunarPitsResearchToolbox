@@ -99,7 +99,6 @@ else:
 
 
 class DetailedModelDSKKernel(BaseKernel):
-
     """
     Generates or retrieves a detailed SPICE DSK kernel for the Moon’s surface.
 

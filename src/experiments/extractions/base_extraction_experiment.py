@@ -1,4 +1,3 @@
-
 class BaseExtractionConfig:
     registry = {}
 

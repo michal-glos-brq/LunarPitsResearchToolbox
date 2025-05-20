@@ -88,4 +88,3 @@ class AreaFilter(BaseFilter):
 
         # Compute final straight-line (Cartesian-like) distance
         return np.sqrt(lat_dist**2 + lon_dist_scaled**2) * (np.pi * LUNAR_RADIUS / 180)
-

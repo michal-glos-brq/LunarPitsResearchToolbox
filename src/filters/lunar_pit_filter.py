@@ -27,14 +27,12 @@ class LunarPitFilter(PointFilter):
         """
         self.dsk_filename = dsk_filename
         with FileLock(dsk_filename + ".lock", timeout=DSK_KERNEL_LOCK_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL):
-            super().__init__(hard_radius, self._load_target_points())    
-
+            super().__init__(hard_radius, self._load_target_points())
 
     @property
     def name(self):
         """Obtain the filter unique name without instantiation"""
         return f"LunarPitFilter_{self.hard_radius}"
-
 
     @classmethod
     def from_kwargs_and_kernel_manager(cls, kernel_manager, **kwargs):
@@ -47,7 +45,6 @@ class LunarPitFilter(PointFilter):
             raise ValueError("hard_radius must be provided in kwargs")
         return cls(kwargs["hard_radius"], dsk_filename)
 
-
     def _load_target_points(self):
         """Fetches crater points and converts lat/lon to Cartesian coordinates using DSK."""
         points = Sessions.get_all_pits_points()
@@ -57,4 +54,3 @@ class LunarPitFilter(PointFilter):
         # Store computed points
         points["X"], points["Y"], points["Z"] = np.array(cartesian_points).T
         return points[["X", "Y", "Z"]].values
-

@@ -45,7 +45,7 @@ from src.SPICE.instruments.instrument import BaseInstrument
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# Basically the end of active measurements. Passive values still present, could be potentially processed,
+# The end of active measurements. Passive values still present, could be potentially processed,
 # hence no hard limit on latest_active_lola_date.
 latest_active_lola_date = Time("2013-07-01T00:00:00", format="isot", scale="utc")
 one_minute_delta = TimeDelta(60, format="sec")

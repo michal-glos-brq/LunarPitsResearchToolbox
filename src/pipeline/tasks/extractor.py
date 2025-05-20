@@ -46,7 +46,6 @@ INSTRUMENT_MAP: Dict[str, type] = {
 }
 
 
-# @shared_task(bind=True, name="run_data_extraction")
 def run_data_extraction(
     self,
     start_time_isot: str,  # Obtained - Time.iso
@@ -72,7 +71,7 @@ def run_data_extraction(
     # 1. Parse & validate times up-front
     try:
         start_time = Time(start_time_isot, format="isot", scale="utc")
-        end_time   = Time(end_time_isot,   format="isot", scale="utc")
+        end_time = Time(end_time_isot, format="isot", scale="utc")
     except Exception as e:
         raise ValueError(f"Bad time input: {e!r}")
 
@@ -106,7 +105,7 @@ def run_data_extraction(
         instruments = [INSTRUMENT_MAP[name]() for name in instrument_names]
 
         # 6. Kick off the engine
-        extractor = DataFetchingEngine(instruments, filter_obj, kernel_manager, custom_filter_objects)  
+        extractor = DataFetchingEngine(instruments, filter_obj, kernel_manager, custom_filter_objects)
         extractor.start_extraction(
             IntervalManager.from_json(time_interval_manager_json),
             start_time=start_time,
@@ -122,6 +121,7 @@ def run_data_extraction(
     except Exception as e:
         # 7. Capture full exception info in Celery meta so exc_type isn’t lost
         import traceback, sys
+
         etype, evalue, tb = sys.exc_info()
         tb_lines = traceback.format_exception(etype, evalue, tb)
         logger.error("Extraction failed:\n%s", "".join(tb_lines))
@@ -129,10 +129,10 @@ def run_data_extraction(
             self.update_state(
                 state="FAILURE",
                 meta={
-                    "exc_type":    etype.__name__,
+                    "exc_type": etype.__name__,
                     "exc_message": str(evalue),
-                    "traceback":   tb_lines,
-                }
+                    "traceback": tb_lines,
+                },
             )
         raise  # re-raise with original traceback
 
@@ -142,8 +142,8 @@ def run_data_extraction(
 
     # 9. Return a clear summary
     return {
-        "status":            "SUCCESS",
-        "instruments":       instrument_names,
-        "retry_count":       retry_count,
-        "extraction_name":   extraction_name,
+        "status": "SUCCESS",
+        "instruments": instrument_names,
+        "retry_count": retry_count,
+        "extraction_name": extraction_name,
     }

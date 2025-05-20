@@ -45,14 +45,14 @@ Time.precision = SPICE_DECIMAL_PRECISION
 MASTER_IP = os.getenv("MASTER_IP", "host.docker.internal")
 
 _LOG_NAME = os.getenv("LOG_LEVEL", "INFO").upper()
-if _LOG_NAME not in ("DEBUG","INFO","WARNING","ERROR","CRITICAL"):
+if _LOG_NAME not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
     raise ValueError(f"Invalid LOG_LEVEL { _LOG_NAME }")
 LOG_LEVEL = getattr(logging, _LOG_NAME)
 
 
-
 class TqdmLoggingHandler(logging.Handler):
     """A handler that routes all logs through tqdm.write()."""
+
     def __init__(self, level=logging.NOTSET):
         super().__init__(level)
 
@@ -64,7 +64,9 @@ class TqdmLoggingHandler(logging.Handler):
         except Exception:
             self.handleError(record)
 
+
 setup_flag = False
+
 
 def setup_logging():
     global setup_flag

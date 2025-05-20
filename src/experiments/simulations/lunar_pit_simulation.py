@@ -11,6 +11,7 @@ class LunarPitAtlasMappingLROConfig(BaseSimulationConfig):
                         --task remote_sensing \
                         --dry-run 
     """
+
     experiment_name = "lunar_pit_atlas_mapping_LRO_simulation"
 
     instrument_names = [
@@ -42,5 +43,3 @@ class LunarPitAtlasMappingLROConfig(BaseSimulationConfig):
     filter_kwargs = {
         "hard_radius": 35,
     }
-
-

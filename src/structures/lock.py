@@ -129,7 +129,6 @@ class SharedFileUseLock:
                 except Exception:
                     pass
 
-
     def try_delete_file(self) -> bool:
         """
         Tries to delete the target file if it's not in use.

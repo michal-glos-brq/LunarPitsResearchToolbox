@@ -89,7 +89,7 @@ class RemoteSensingSimulator:
                 f"❌ {len(self.failed_computation_batch):>4} | T {self.total_failed:<5}".ljust(24),
                 # Distance from instrument to boresight projection - "height"
                 f"📏 Max distance: {self.heights.maximum:>7.2f}".ljust(24),
-                # Basically assumed FOV radisu
+                # Basically assumed FOV radius
                 f"🎯 Max FOV:    {self.fov_widths.maximum:>7.2f}".ljust(24),
             ]
 
@@ -166,7 +166,6 @@ class RemoteSensingSimulator:
             "spacecraft_position_computation_failed_total": self.simulation_state.spacecraft_position_computation_failed_counter,
         }
 
-
     def check_threads(self):
         # Iterate in reverse to safely pop finished threads.
         for thread_id in range(len(self.threads) - 1, -1, -1):
@@ -217,7 +216,6 @@ class RemoteSensingSimulator:
                 distance = self.filter.rank_point(projection.projection)
                 score = distance - ((self.filter.hard_radius + instrument_state.fov_widths.maximum) * TOLERANCE_MARGIN)
                 if score <= 0:
-                    # Use simulation state's current timestamp.
                     datetime_current_timestamp = self.simulation_state.current_simulation_timestamp.to_datetime()
                     instrument_state.positive_sensing_batch.append(
                         {
@@ -373,7 +371,7 @@ class RemoteSensingSimulator:
             self.check_threads()
 
     def create_metadata_record(self):
-        '''Returns True when task already computed'''
+        """Returns True when task already computed"""
         self.simulation_metadata_id = ObjectId()
         simulation_metadata = {
             "_id": self.simulation_metadata_id,  # Explicit ID
@@ -452,7 +450,9 @@ class RemoteSensingSimulator:
         task_already_finished = self.create_metadata_record()
         if task_already_finished:
             if current_task is not None:
-                current_task.update_state(state="SUCCESS", meta={"result": "Task already finished, no computation to do."})
+                current_task.update_state(
+                    state="SUCCESS", meta={"result": "Task already finished, no computation to do."}
+                )
             return
 
         SPICELog.interactive_progress = interactive_progress

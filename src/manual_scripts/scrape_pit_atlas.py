@@ -98,9 +98,7 @@ PIT_TABLE_COLUMNS = [
 ]
 
 
-async def async_fetch_with_retries(
-    session: aiohttp.ClientSession, url: str, REQUEST_MAX_RETRIES: int = 10
-):
+async def async_fetch_with_retries(session: aiohttp.ClientSession, url: str, REQUEST_MAX_RETRIES: int = 10):
     logger.debug(f"Fetching URL: {url}")
     sleep_time = 10  # Initial delay.
     for _ in range(REQUEST_MAX_RETRIES):
@@ -325,6 +323,7 @@ async def scrape_and_parse_lunar_pits():
 if __name__ == "__main__":
 
     from src.global_config import setup_logging
+
     setup_logging()
 
     asyncio.run(scrape_and_parse_lunar_pits())

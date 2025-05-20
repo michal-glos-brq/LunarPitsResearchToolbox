@@ -29,7 +29,6 @@ from src.SPICE.config import IMPLICIT_BORESIGHT, DIVINER_SUBINSTRUMENT_PIXEL_COU
 
 
 class SubInstrument:
-
     """
     Represents a SPICE-defined subinstrument using `getfov`.
 
@@ -261,24 +260,28 @@ class MiniRFSubInstrument(ImplicitSubInstrument):
         # rotation about X
         def rot_x(theta):
             c, s = np.cos(theta), np.sin(theta)
-            return np.array([
-                [1,  0,  0],
-                [0,  c, -s],
-                [0,  s,  c],
-            ])
+            return np.array(
+                [
+                    [1, 0, 0],
+                    [0, c, -s],
+                    [0, s, c],
+                ]
+            )
 
         # rotation about Y
         def rot_y(theta):
             c, s = np.cos(theta), np.sin(theta)
-            return np.array([
-                [ c, 0,  s],
-                [ 0, 1,  0],
-                [-s, 0,  c],
-            ])
+            return np.array(
+                [
+                    [c, 0, s],
+                    [0, 1, 0],
+                    [-s, 0, c],
+                ]
+            )
 
         # build the four corners: (+across,+along), (-across,+along), (-across,-along), (+across,-along)
         corners = []
-        for sign_x, sign_y in [(+1,+1), (-1,+1), (-1,-1), (+1,-1)]:
+        for sign_x, sign_y in [(+1, +1), (-1, +1), (-1, -1), (+1, -1)]:
             # first rotate boresight by sign_x * half_across about Y,
             # then by sign_y * half_along about X
             R = rot_x(sign_y * half_along) @ rot_y(sign_x * half_across)
@@ -286,15 +289,12 @@ class MiniRFSubInstrument(ImplicitSubInstrument):
 
         bounds = np.vstack(corners)  # shape (4,3), already unit-length
 
-        left_bound  = rot_x(-half_along) @ boresight
+        left_bound = rot_x(-half_along) @ boresight
         right_bound = rot_x(+half_along) @ boresight
         self.line_bounds = np.vstack([left_bound, right_bound])  # shape (2,3)
 
-
         # hand off to the base class
-        super().__init__(f"minirf-{channel}", frame,
-                         boresight=boresight,
-                         bounds=bounds)
+        super().__init__(f"minirf-{channel}", frame, boresight=boresight, bounds=bounds)
 
         self.channel = channel.upper()
 
@@ -310,6 +310,5 @@ class MiniRFSubInstrument(ImplicitSubInstrument):
             np.ndarray: Interpolated unit look vector in instrument frame.
         """
         frac = (pixel_index + 0.5) / pixel_count
-        vec  = (1.0 - frac) * self.line_bounds[0] + frac * self.line_bounds[1]
+        vec = (1.0 - frac) * self.line_bounds[0] + frac * self.line_bounds[1]
         return vec / np.linalg.norm(vec)
-

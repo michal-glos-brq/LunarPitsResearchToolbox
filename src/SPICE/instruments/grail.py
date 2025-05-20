@@ -38,7 +38,6 @@ class GrailBInstrument(BaseInstrument):
 
     _orbiting_body = "MOON"
 
-
     _sub_instruments = None
 
     @property
@@ -46,4 +45,3 @@ class GrailBInstrument(BaseInstrument):
         if self._sub_instruments is None:
             self._sub_instruments = [SubInstrument(naif_id) for naif_id in GRAIL_B_INSTRUMENTS]
         return self._sub_instruments
-

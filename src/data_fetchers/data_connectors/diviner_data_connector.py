@@ -39,8 +39,6 @@ from src.structures import ProjectionPoint
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
 
 compose_diviner_url = lambda path: urljoin(DIVINER_BASE_URL, path)
 

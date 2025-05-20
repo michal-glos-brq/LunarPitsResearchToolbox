@@ -1,8 +1,15 @@
 """
-Here we are defining the celery app, completely
+============================================================
+Pipeline description
+============================================================
+
+Author: Michal Glos
+University: Brno University of Technology (VUT)
+Faculty: Faculty of Electrical Engineering and Communication (FEKT)
+Diploma Thesis Project
 """
+
 from celery import Celery
-from celery.signals import worker_process_init
 
 from src.pipeline.config import REDIS_CONNECTION_STRING
 from src.pipeline.tasks.simulator import run_remote_sensing_simulation
@@ -16,11 +23,9 @@ app.conf.update(
     result_serializer="json",
     timezone="Europe/Prague",
     enable_utc=True,
-
     # *** disable Celery’s logging hijack ***
     worker_hijack_root_logger=False,
     worker_redirect_stdouts=False,
-
     # your other robustness flags…
     worker_max_tasks_per_child=4,
     worker_prefetch_multiplier=1,
@@ -28,25 +33,18 @@ app.conf.update(
     task_default_queue="default",
     task_reject_on_worker_lost=False,
     task_track_started=True,
-
     # Do not duplicate tasks
-    broker_transport_options={'visibility_timeout': 172800 * 2},
-    result_backend_transport_options={'visibility_timeout': 172800 * 2},
+    broker_transport_options={"visibility_timeout": 172800 * 2},
+    result_backend_transport_options={"visibility_timeout": 172800 * 2},
 )
 
-
-# 2) On each worker process start, install your handler once:
-@worker_process_init.connect
-def _init_worker_logging(**kwargs):
-    from src.global_config import setup_logging
-    setup_logging()
 
 run_remote_sensing_simulation_task = app.task(
     name="src.pipeline.tasks.simulator.run_remote_sensing_simulation",
     bind=True,
     autoretry_for=(ConnectionError,),
     retry_backoff=True,
-    retry_kwargs={'max_retries': 5}
+    retry_kwargs={"max_retries": 5},
 )(run_remote_sensing_simulation)
 
 
@@ -54,6 +52,5 @@ run_data_extraction_task = app.task(
     name="src.pipeline.tasks.extractor.run_data_extraction",
     bind=True,
     autoretry_for=(),
-    retry_kwargs={'max_retries': 0},
+    retry_kwargs={"max_retries": 0},
 )(run_data_extraction)
-

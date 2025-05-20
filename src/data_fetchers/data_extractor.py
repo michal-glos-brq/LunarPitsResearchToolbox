@@ -60,10 +60,8 @@ class DataFetchingEngine:
                 instrument.name, instrument_connector.timeseries, instrument_connector.indices
             )
             self.instrument = instrument
-            # Here we collect data filtered just by time interval
             self.data = []
             self.total_data = 0
-            # Here we collect data reprojected and filtered with filter object, ready for database push
             self.reprojected_data = []
             self.total_reprojected_data = 0
             self.reprojected_rejected_total = 0
@@ -342,7 +340,6 @@ class DataFetchingEngine:
 
         self.extraction_state.kernel_manager.step(self.extraction_state.start_time)
 
-
         # Log the simulation state into Mongo, eventually quit if task already finished
         task_already_finished = self.create_metadata_record()
         if task_already_finished:
@@ -352,14 +349,12 @@ class DataFetchingEngine:
                 )
             return
 
-
         self.data_connectors = self.setup_data_connectors()
         self.instrument_states = {
             instr.name: self.InstrumentState(instr, self.data_connectors[instr.name])
             for instr in self.extraction_state.instruments
         }
 
-        # Do the mongo DB
         pbar = (
             tqdm(
                 total=len(self.extraction_state.interval_manager),
@@ -370,7 +365,6 @@ class DataFetchingEngine:
             if interactive_progress
             else nullcontext()
         )
-
 
         SPICELog.interactive_progress = interactive_progress
         SPICELog.supress_output = supress_error_logs

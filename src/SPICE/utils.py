@@ -18,6 +18,7 @@ from pvl.decoder import PVLDecoder
 
 from src.global_config import SPICE_DECIMAL_PRECISION
 
+
 def et2astropy_time(et: float) -> Time:
     return Time(spice.et2utc(et, "ISOC", SPICE_DECIMAL_PRECISION), format="isot", scale="utc")
 

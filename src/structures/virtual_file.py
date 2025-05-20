@@ -21,11 +21,11 @@ from typing import Optional, Dict
 from io import BytesIO
 
 from .interval_manager import TimeInterval
-from ..global_config import SAVE_DATAFILES_TO_RAM, HDD_BASE_PATH
+from src.global_config import SAVE_DATAFILES_TO_RAM, HDD_BASE_PATH
 
 MAX_RETRIES = 128
-DOWNLOAD_TIMEOUT = 60 * 60 * 2 # 2 hours
-DOWNLOAD_CHUNK_SIZE = 8 * 1024 # 8 KB
+DOWNLOAD_TIMEOUT = 60 * 60 * 2  # 2 hours
+DOWNLOAD_CHUNK_SIZE = 8 * 1024  # 8 KB
 
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,6 @@ class VirtualFile:
         # initialize buffer or file handle
         self._make_file_handle()
 
-
     def _make_file_handle(self):
         """Create either a BytesIO or a real file on disk with a hashed name."""
         if SAVE_DATAFILES_TO_RAM:
@@ -65,11 +64,11 @@ class VirtualFile:
             # open for write+binary, truncate if exists
             self.file = open(path, "w+b")
 
-
     def _download_worker(self):
         """
         Download the file in a separate thread, with resume support and retries.
         """
+
         def _reset_buffer():
             try:
                 # close current handle
@@ -95,9 +94,7 @@ class VirtualFile:
 
                 # 1) Attempt the HTTP GET
                 try:
-                    resp = requests.get(self.url, stream=True,
-                                        timeout=DOWNLOAD_TIMEOUT,
-                                        headers=headers)
+                    resp = requests.get(self.url, stream=True, timeout=DOWNLOAD_TIMEOUT, headers=headers)
                 except Exception as e:
                     logger.warning(f"[{retries+1}/{MAX_RETRIES}] Network error: {e}")
                     retries += 1
@@ -124,7 +121,7 @@ class VirtualFile:
                     cr = resp.headers.get("Content-Range", "")
                     if "/" in cr:
                         try:
-                            expected = int(cr.split("/",1)[1])
+                            expected = int(cr.split("/", 1)[1])
                         except ValueError:
                             expected = None
                     else:
@@ -153,8 +150,7 @@ class VirtualFile:
                 # 6) Verify size if known
                 if expected is not None and actual != expected:
                     logger.warning(
-                        f"[{retries+1}/{MAX_RETRIES}] Size mismatch: "
-                        f"expected {expected}, got {actual}; restarting"
+                        f"[{retries+1}/{MAX_RETRIES}] Size mismatch: " f"expected {expected}, got {actual}; restarting"
                     )
                     _reset_buffer()
                     retries += 1
@@ -174,11 +170,9 @@ class VirtualFile:
             # Always signal done, exactly once
             self._done.set()
 
-
     def assert_download_ok(self):
         if self.corrupted:
             raise RuntimeError(f"Download failed for {self.url}")
-
 
     def download(self, postpone_seconds: int = 0):
         """Start download in background thread."""

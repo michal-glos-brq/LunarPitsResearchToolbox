@@ -169,7 +169,9 @@ class BaseDataConnector(ABC):
         if self.current_file is not None:
             return self._parse_current_file()
 
-    def get_interval_data_from_current_file(self, time_interval: TimeInterval, instrument: BaseInstrument, filter_obj: BaseFilter) -> List[Dict]:
+    def get_interval_data_from_current_file(
+        self, time_interval: TimeInterval, instrument: BaseInstrument, filter_obj: BaseFilter
+    ) -> List[Dict]:
         if self.current_file is not None:
             return self._get_interval_data_from_current_file(time_interval, instrument, filter_obj)
         else:
@@ -182,7 +184,9 @@ class BaseDataConnector(ABC):
         # Placeholder for actual validation logic
         return True
 
-    def read_interval(self, time_interval: TimeInterval, instrument: BaseInstrument, filter_obj: BaseFilter) -> List[Dict]:
+    def read_interval(
+        self, time_interval: TimeInterval, instrument: BaseInstrument, filter_obj: BaseFilter
+    ) -> List[Dict]:
         """
         Fetch data for the specified time interval. Files arefetched BASED on the interval list,
         so any discrepancies mean either file was not found or something terrible happened

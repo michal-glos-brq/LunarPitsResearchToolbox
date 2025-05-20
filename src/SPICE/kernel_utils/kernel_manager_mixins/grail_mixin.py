@@ -27,6 +27,7 @@ from src.SPICE.kernel_utils.spice_kernels import (
 )
 from src.SPICE.kernel_utils.kernel_manager_mixins.base_mixin import BaseKernelManagerMixin
 
+
 class GRAILKernelManagerMixin(BaseKernelManagerMixin):
 
     def setup_kernels(

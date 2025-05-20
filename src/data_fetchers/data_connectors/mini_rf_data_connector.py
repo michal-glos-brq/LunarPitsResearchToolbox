@@ -23,7 +23,6 @@ from itertools import product, chain
 
 
 from filelock import FileLock
-import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from bs4 import BeautifulSoup as bs

@@ -9,7 +9,6 @@ Faculty: Faculty of Electrical Engineering and Communication (FEKT)
 Diploma Thesis Project
 """
 
-
 #! /usr/bin/env python3
 
 import argparse
@@ -97,6 +96,7 @@ def main():
 if __name__ == "__main__":
 
     from src.global_config import setup_logging
+
     setup_logging()
 
     main()

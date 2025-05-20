@@ -33,8 +33,6 @@ from src.SPICE.config import ABBERRATION_CORRECTION
 logger = logging.getLogger(__name__)
 
 
-
-
 class BaseInstrument(ABC):
     """
     Abstract base class representing a remote sensing instrument.
@@ -133,7 +131,6 @@ class BaseInstrument(ABC):
         projected_bounds = np.stack([bnd.projection for bnd in self.project_bounds(et)])
         # projected_bounds = np.stack([self.project_vector(et, bnd).projection for bnd in self.bounds(et)])
         return np.linalg.norm(projected_bounds - projection, axis=1).max()
-
 
     def boresight(self, et: float = 0) -> np.array:
         """

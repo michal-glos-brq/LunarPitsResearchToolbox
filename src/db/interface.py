@@ -19,7 +19,7 @@ import logging
 import queue
 import random
 import threading
-from typing import List, Dict, Tuple, Optional, Any
+from typing import List, Dict, Tuple
 from datetime import datetime
 
 import pandas as pd
@@ -306,9 +306,6 @@ class Sessions:
         """
         session = Sessions.get_db_session(SIMULATION_DB_NAME)
         collection = session[SIMULATION_METADATA_COLLECTION]
-        # Query matching:
-        # - "instruments": {"$all": [...], "$size": n} makes sure that the document's instruments array contains
-        #   all the provided elements (regardless of order) and that its length matches exactly.
         query = {
             "simulation_name": simulation_metadata["simulation_name"],
             "start_time": simulation_metadata["start_time"],
@@ -373,9 +370,6 @@ class Sessions:
             "finished": True,  # Optionally query only finished simulations.
             "instruments": {
                 "$all": instrument_names,
-                # We want to be able to restrict the instruments we calculate the intervals for
-                # Some instruments are redundant and some instruments can have different data fetching filters
-                # "$size": len(instrument_names),
             },
         }
         query["simulation_name"] = {"$in": simulation_names} if len(simulation_names) != 1 else simulation_names[0]
@@ -513,7 +507,6 @@ class Sessions:
         collection = session[instrument_name]
         return collection
 
-
     @staticmethod
     def prepare_extraction_metadata(extraction_metadata: dict) -> bool:
         """
@@ -523,11 +516,6 @@ class Sessions:
         """
         session = Sessions.get_db_session(EXTRACTOR_DB_NAME)
         collection = session[EXTRACTOR_METADATA_COLLECTION]
-        # Query matching:
-        # - "instruments": {"$all": [...], "$size": n} makes sure that the document's instruments array contains
-        #   all the provided elements (regardless of order) and that its length matches exactly.
-        # We query only exactly the same tasks to not repeat those, there might be small tweaks to the state, which would
-        # esentially be the same extraction run, but would not be obtained by this query
         query = {
             "extraction_name": extraction_metadata["extraction_name"],
             "start_time": extraction_metadata["start_time"],
