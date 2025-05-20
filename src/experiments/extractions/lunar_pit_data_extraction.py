@@ -11,11 +11,6 @@ class DIVINERExtractorConfig(BaseExtractionConfig):
     ./src/manual_scripts/aggregate_simulation_intervals.py --config-name lunar_pit_atlas_mapping_LRO_simulation --sim-name lunar_pit_run --instruments LOLA --interval-name lunar_pit_run --threshold 10
 
     ./src/manual_scripts/assign_tasks.py --config-name lunar_pit_extraction_full --name lunar_pit_extraction_full --task extraction
-    Run example: ./src/manual_scripts/assign_tasks.py \
-                    --config-name lunar_pit_extraction_full \
-                    --name lunar_pit_extraction_full \
-                    --task extraction \
-                    --dry-run 
     """
 
     experiment_name = "lunar_pit_extraction_full"

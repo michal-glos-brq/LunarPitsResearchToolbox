@@ -304,23 +304,6 @@ class MiniRFDataConnector(BaseDataConnector):
         max_step = min(max_step_t, max_step_l)
         min_step = SUBDIVISION_MIN_SIDE_LEN
 
-
-
-        # def slice_data(start_id_t, stop_id_t, start_id_l, stop_id_l) -> List[Dict]:
-        #     df = pd.DataFrame(
-        #         {
-        #             "et": t[start_id_t:stop_id_t].repeat(stop_id_l - start_id_l),
-        #             "mode": mode,
-        #             "line": np.tile(l[start_id_l:stop_id_l], stop_id_t - start_id_t),
-        #             "lines": lines,
-        #             "ch1": data_slice[start_id_t:stop_id_t, start_id_l:stop_id_l, 0].flatten(),
-        #             "ch2": data_slice[start_id_t:stop_id_t, start_id_l:stop_id_l, 1].flatten(),
-        #             "ch3": data_slice[start_id_t:stop_id_t, start_id_l:stop_id_l, 2].flatten(),
-        #             "ch4": data_slice[start_id_t:stop_id_t, start_id_l:stop_id_l, 3].flatten(),
-        #         }
-        #     )
-        #     mask = (df[["ch1", "ch2", "ch3", "ch4"]] == 0).all(axis=1)
-        #     return df[~mask].reset_index(drop=True).to_dict(orient="records")
         
         def slice_data(start_id_t, stop_id_t, start_id_l, stop_id_l) -> List[Dict]:
             # pull out the block

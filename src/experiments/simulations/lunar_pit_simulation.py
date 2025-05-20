@@ -10,18 +10,6 @@ class LunarPitAtlasMappingLROConfig(BaseSimulationConfig):
                         --name lunar_pit_run \
                         --task remote_sensing \
                         --dry-run 
-    Run to aggregate: ./src/manual_scripts/aggregate_simulation_intervals.py \
-                            --config-name lunar_pit_atlas_mapping_LRO_simulation \
-                            --sim-name lunar_pit_run \
-                            --instruments DIVINER,LOLA \
-                            --interval-name lunar_pit_run \
-                            --threshold 5
-    Run to aggregate (radar data): ./src/manual_scripts/aggregate_simulation_intervals.py \
-                            --config-name lunar_pit_atlas_mapping_LRO_simulation \
-                            --sim-name lunar_pit_run \
-                            --instruments MiniRF \
-                            --interval-name lunar_pit_run \
-                            --threshold 10
     """
     experiment_name = "lunar_pit_atlas_mapping_LRO_simulation"
 
