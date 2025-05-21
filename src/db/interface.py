@@ -47,14 +47,10 @@ class Sessions:
     This class provides a centralized interface to:
       - Access MongoDB databases for parsed and raw lunar pit data (pits, pit details, images).
       - Fetch all parsed lunar pit locations as a Pandas DataFrame (with caching).
-      - Initialize and manage timeseries collections for simulation results (positive and failed).
-      - Perform threaded, batched inserts of simulation results into MongoDB with retry logic.
+      - Initialize and manage timeseries collections for simulation and extraction results (positive and failed).
+      - Perform threaded, batched inserts of simulation and extraction results into MongoDB with retry logic.
 
-    Notes:
-      - Simulation collections use MongoDB's timeseries format, with `timestamp_utc` as the time field
-        and `meta` as the metadata field.
-      - All database and collection names are defined in `src.db.config`.
-      - This class is intentionally non-modular and purpose-built for fast iteration in scientific pipelines.
+    This is pretty cramped class and is responsible for every DB call, so it's purpusefully spaghetti
     """
 
     client: MongoClient = None
@@ -64,9 +60,7 @@ class Sessions:
 
     def __init__(self):
         """
-        Initialize the Sessions class.
-        This is a singleton class, so the constructor should not be called directly.
-        Use the static methods instead.
+        Initialize the Sessions class. It's a singleton, so it cannot be instantiated.
         """
         raise NotImplementedError("This class is a singleton and cannot be instantiated.")
 
@@ -460,7 +454,7 @@ class Sessions:
         instrument_name: str, timeseries: Dict, indices: List[str] = ["et", "meta.simulation_id"]
     ):
         """
-        Ensures collections exist for probably RDR dataset extraction per instrument
+        Ensures collections exists for extraction workflow
 
         params:
         instrument_name (str): The name of the instrument for which collections are created.

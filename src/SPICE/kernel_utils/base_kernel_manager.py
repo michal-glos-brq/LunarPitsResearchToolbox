@@ -42,7 +42,7 @@ class BaseKernelManager(ABC):
         - Manages static kernel loading during initialization (if enabled).
         - Supports dynamic kernel loading based on observation time.
         - Delegates dataset-specific setup to mixins via `setup_kernels`.
-        - Offers interface for stepping through time, activating coverage, and querying loaded bounds.
+        - Offers interface for stepping through time.
 
     Dynamic kernels are expected to implement `reload_kernels(Time)` and maintain
     `min_loaded_time` / `max_loaded_time` properties.

@@ -10,6 +10,7 @@ class DIVINERExtractorConfig(BaseExtractionConfig):
     ./src/manual_scripts/aggregate_simulation_intervals.py --config-name lunar_pit_atlas_mapping_LRO_simulation --sim-name lunar_pit_run --instruments MiniRF --interval-name lunar_pit_run --threshold 8
     ./src/manual_scripts/aggregate_simulation_intervals.py --config-name lunar_pit_atlas_mapping_LRO_simulation --sim-name lunar_pit_run --instruments LOLA --interval-name lunar_pit_run --threshold 10
 
+    How I ran extraction after that
     ./src/manual_scripts/assign_tasks.py --config-name lunar_pit_extraction_full --name lunar_pit_extraction_full --task extraction
     """
 

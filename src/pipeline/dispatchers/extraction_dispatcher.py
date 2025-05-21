@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 class ExtractorTaskRunner(BaseTaskRunner):
     """
     Task runner for remote sensing simulations.
-    Splits the experiment time range into chunks and dispatches Celery tasks.
+    Splits the experiment time range into chunks and dispatches them as Celery tasks.
     """
 
     def run(

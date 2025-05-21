@@ -64,8 +64,8 @@ def run_remote_sensing_simulation(
     Run a remote sensing simulation with the specified parameters.
 
     Parameters:
-      - start_time_isot (float): Start time (ephemeris time) in seconds.
-      - end_time_isot (float): End time (ephemeris time) in seconds.
+      - start_time_isot (float): Start time (ephemeris time) in seconds, isot format.
+      - end_time_isot (float): End time (ephemeris time) in seconds, isot format.
       - instrument_names (list[str]): List of instrument names to simulate.
       - kernel_manager_type (str): Type of kernel manager ('LRO' or 'GRAIL').
       - filter_type (str): Filter type ('point' or 'area').

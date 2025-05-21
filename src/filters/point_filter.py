@@ -21,6 +21,7 @@ class PointFilter(BaseFilter):
     def __init__(self, hard_radius: float, points: np.array):
         """
         hard_radius - radius around the point we want to caputure. Hard in the sense that no points within this treshold would be filtered out
+        dsk_filename - DSK file name
         """
         self._hard_radius = hard_radius
         self._target_points = points

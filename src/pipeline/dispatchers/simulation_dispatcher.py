@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 class RemoteSensingTaskRunner(BaseTaskRunner):
     """
     Task runner for remote sensing simulations.
-    Splits the experiment time range into chunks and dispatches Celery tasks.
+    Splits the experiment time range into chunks and dispatches them as Celery tasks.
     """
 
     def run(self, config_name: str, dry_run: bool = True, name: str = None, retry_count: Optional[int] = None):

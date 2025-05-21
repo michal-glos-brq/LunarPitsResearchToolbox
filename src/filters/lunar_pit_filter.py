@@ -19,11 +19,12 @@ from src.SPICE.config import DSK_KERNEL_LOCK_TIMEOUT, KERNEL_LOCK_POLL_INTERVAL
 
 
 class LunarPitFilter(PointFilter):
-    """This filter is used to filter out points that in a treshold distance to points on the lunar surface"""
+    """This filter is used to filter out points that are not within a treshold distance to points on the lunar surface"""
 
     def __init__(self, hard_radius: float, dsk_filename: str):
         """
         hard_radius - radius around the point we want to caputure. Hard in the sense that no points within this treshold would be filtered out
+        dsk_filename - DSK file name
         """
         self.dsk_filename = dsk_filename
         with FileLock(dsk_filename + ".lock", timeout=DSK_KERNEL_LOCK_TIMEOUT, poll_interval=KERNEL_LOCK_POLL_INTERVAL):
@@ -31,7 +32,7 @@ class LunarPitFilter(PointFilter):
 
     @property
     def name(self):
-        """Obtain the filter unique name without instantiation"""
+        """Obtain the filter unique name"""
         return f"LunarPitFilter_{self.hard_radius}"
 
     @classmethod

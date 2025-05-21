@@ -218,7 +218,7 @@ class DetailedModelDSKKernel(BaseKernel):
             lat (float or np.ndarray): Latitude(s) in degrees.
             lon (float or np.ndarray): Longitude(s) in degrees.
             dsk_path (str): Path to the DSK file.
-            alt_km (float): Altitude of ray origin in km (default 10,000 km).
+            alt_km (float): Altitude of ray origin in km (default 10,000 km), used as virtual spacecraft for projection.
 
         Returns:
             np.ndarray: Shape (3,) or (N, 3) array of Cartesian coordinates in km.
@@ -314,6 +314,7 @@ class DetailedModelDSKKernel(BaseKernel):
         Raises:
             RuntimeError: If the GDAL CLI fails to produce output.
         """
+        # This section here requires tweaking for bodies different then the Moon
         command = [
             "gdal_translate",
             "-of",

@@ -49,7 +49,7 @@ from src.structures import DynamicMaxBuffer
 class RemoteSensingSimulator:
     """
     Simulate the trajectory and orientation of a spacecraft to identify time intervals
-    when it points toward an area of interest on the lunar surface.
+    when it points toward an area of interest (defined with filter object) on the lunar surface.
 
     Optimized for a single satellite with multiple instruments.
     The KernelManager must be pre-configured; only the step method is called within the simulation.
@@ -148,11 +148,13 @@ class RemoteSensingSimulator:
 
     @staticmethod
     def format_td(td: timedelta) -> str:
+        """Format timedelta into human-readable string"""
         total = int(td.total_seconds())
         return f"{total // 3600:02}:{(total % 3600) // 60:02}:{total % 60:02}"
 
     @property
     def simulation_quality_metadata(self):
+        """Metadata dict about the simulation progress"""
         return {
             "total_simulated_seconds": int(self.simulation_state.simulation_timekeeper.total_seconds()),
             "total_simulated_steps": self.simulation_state.current_simulation_step,
@@ -186,6 +188,7 @@ class RemoteSensingSimulator:
             ...
 
     def _simulation_step(self):
+        """Single step of the whole simulation loop - actual logic implementaion"""
         # Early rejection based on spacecraft position.
         if self.simulation_state.max_speed_counter == 0:
             self.simulation_state.max_speed_counter = DYNAMIC_MAX_BUFFER_SPACECRAFT_VELOCITY_UPDATE_RATE
@@ -277,7 +280,6 @@ class RemoteSensingSimulator:
     def simulation_step(self):
         """
         Perform a single simulation step.
-        This method should be called in a loop to advance the simulation.
         """
         try:
             self._simulation_step()
@@ -297,6 +299,7 @@ class RemoteSensingSimulator:
     def _simulation_step_housekeeping(
         self, pbar, interactive_progress: bool = True, current_task: Optional[Task] = None
     ):
+        """Housekeeping - log and update the simulation state"""
         # Advance simulation time.
         self.simulation_state._time_step(self.computation_timedelta)
         # Periodically dump the state of simulation
@@ -413,9 +416,9 @@ class RemoteSensingSimulator:
         :param end_time: End time of the simulation
         :param interactive_progress: Whether to show the progress bar, if false, just dump progress and logs
         :param current_task: Celery task object, if provided, will be used to update the progress
-        :param supress_error_logs: Whether to suppress error logs
+        :param supress_error_logs: Whether to suppress error logs and tracebacks
         :param simulation_name: Name of the simulation
-        :param task_group_id: Task group ID for the simulation
+        :param task_group_id: Task group ID for the simulation (PID)
         :param retry_count: Is that a retry of a task which already ran? Which retry?
         """
         # Use kernel manager's loaded times if not provided.

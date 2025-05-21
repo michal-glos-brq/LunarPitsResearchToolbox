@@ -54,6 +54,8 @@ class BaseInstrument(ABC):
 
     STATIC_INSTRUMENT = False
     # Approximate values for estimation when there is no data yet and SPICE transformation could not be calculated
+    # Simulated with such values - probably will be ignored, because this means no spice kernel is accessable,
+    # hence no reprojection is possible, so we would not see the data, eventually. It's just for initial universal overestimation.
     _fov_width = 10000
     _height = 1000000
     # SPICE ID of the orbiting body (e.g., Moon)

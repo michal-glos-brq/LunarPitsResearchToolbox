@@ -24,6 +24,8 @@ class AreaFilter(BaseFilter):
         """
         This method is used to create an AreaFilter instance from the given kernel manager and keyword arguments.
         It extracts the DSK filename from the kernel manager and uses it to initialize the filter.
+
+        This implementation ignores kernel manager and uses the keyword arguments only.
         """
         if kwargs.get("min_lat") is None or kwargs.get("max_lat") is None:
             raise ValueError("min_lat and max_lat must be provided in kwargs")
@@ -69,6 +71,7 @@ class AreaFilter(BaseFilter):
         return f"AreaFilter_{self.min_lat}_{self.max_lat}_{self.min_lon}_{self.max_lon}"
 
     def rank_point(self, point: np.array) -> float:
+        """Return the distance to our area of interest"""
         _, lon_rad, lat_rad = spice.reclat(point)
         lat_deg, lon_deg = np.degrees(lat_rad), np.degrees(lon_rad)
 

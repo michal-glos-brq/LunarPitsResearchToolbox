@@ -7,6 +7,10 @@ Author: Michal Glos
 University: Brno University of Technology (VUT)
 Faculty: Faculty of Electrical Engineering and Communication (FEKT)
 Diploma Thesis Project
+
+
+This file server as an aggregation point for configuration of semi-acessable variables
+and logging setup.
 """
 
 import os

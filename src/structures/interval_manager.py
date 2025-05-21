@@ -110,7 +110,6 @@ class IntervalList:
     """
     A sorted list of TimeInterval objects.
     Provides methods to find overlapping intervals and to serialize/deserialize.
-    Work only for non-overlapping lists of intervals.
     """
 
     def __init__(self, intervals: Union[List[TimeInterval], List[Tuple[float, float]]]):
@@ -149,7 +148,7 @@ class IntervalList:
         return self.intervals[-1].end_astropy_time
 
     def to_json(self) -> List[Dict[str, float]]:
-        """List of interval dicts."""
+        """Dump JSON list of interval dicts."""
         return [iv.to_json() for iv in self.intervals]
 
     def get_intervals_intersection(self, target: TimeInterval) -> List[TimeInterval]:
@@ -194,7 +193,8 @@ class IntervalList:
 class MultiIntervalQueue:
     """
     Merges intervals from multiple instruments into one global, sorted queue.
-    Each entry is a tuple: (interval.start_et, instrument_name, interval)
+
+    Allows to iterate in ascending order with instrument names attached.
     """
 
     def __init__(self, instrument_intervals: Dict[str, IntervalList]):
@@ -219,7 +219,8 @@ class MultiIntervalQueue:
 class IntervalManager:
     """
     Manages time intervals for the simulation.
-    Maintains active intervals for each instrument and provides a unified simulation time.
+    Pravides interface with exposed metadata and method for splitting into more self objects -
+        slicing the large tasks into smaller subtasks.
     """
 
     def __init__(self, intervals: Dict[str, Union[list[Tuple[float, float]], IntervalList]]):

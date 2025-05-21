@@ -75,7 +75,7 @@ class SharedFileUseLock:
             return e.errno == errno.EPERM
         return True
 
-    def cleanup_stale_locks(self):
+    def cleanup_stale_locks(self) -> None:
         """
         Iterates over lock files and removes those whose PID no longer exists.
         """

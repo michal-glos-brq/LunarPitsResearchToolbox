@@ -50,7 +50,7 @@ DATA_CONNECTOR_MAP = {
 
 class DataFetchingEngine:
     """
-    Orchestrate the data fetcher to downnload, parse and reproject data to our desired frame.
+    Orchestrate the data fetcher to download, parse and reproject data to our desired frame.
     """
 
     class InstrumentState:

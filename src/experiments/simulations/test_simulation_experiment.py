@@ -4,10 +4,6 @@ from .base_simulation_experiment import BaseSimulationConfig
 
 
 class TestLROShortSimulationConfig(BaseSimulationConfig):
-    """
-    Run example: ./src/manual_scripts/assign_tasks.py --config-name test_lro_short_simulation --name demo_run --dry-run --task remote_sensing
-    """
-
     experiment_name = "test_lro_short_simulation"
 
     instrument_names = [

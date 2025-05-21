@@ -1,9 +1,6 @@
 #! /usr/bin/env python3
 """
-This is pretty simple script, which only aggregates simulation data into intervals (not sampled, but defined by)
-
-Strenght of this architecture is its idempotency (this is prioritized all over the codebase). No matter whether the simulation was ran 100 times, the results
-will be the same. Effectively, running more simulations might lead to the same effects as oversampling, which would effectively be irrelevant.
+This is pretty simple script, which only aggregates simulation data into intervals
 """
 
 import logging
