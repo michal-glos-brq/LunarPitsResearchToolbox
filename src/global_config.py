@@ -21,7 +21,7 @@ from tqdm import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 from astropy.time import Time
 
-### System level confoguration
+### System level confoguration (defaults to worker mounted DATA volume)
 HDD_BASE_PATH = os.environ.get("WORKER_UTILITY_VOLUME", "/app/data")
 
 ## Run-through data files will be saved into HDD (SSD) or into RAM

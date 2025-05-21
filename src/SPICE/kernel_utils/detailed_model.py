@@ -67,6 +67,7 @@ from src.global_config import LUNAR_FRAME, HDD_BASE_PATH, SUPRESS_TQDM
 logger = logging.getLogger(__name__)
 
 
+### To use with different body than MOON, specific kernels have to be loaded
 # We have to have same basic kernels loaded in order to create the DSK model
 KERNELS = [
     BaseKernel("https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls", root_path("lsk/naif0012.tls")),
