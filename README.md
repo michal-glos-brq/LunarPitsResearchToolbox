@@ -2,6 +2,27 @@
 
 A comprehensive toolkit for lunar pit mapping and simulation, developed as part of the diploma thesis in Space Applications master program on FECT-BUT. It integrates SPICE-based instrument modeling, data analysis pipelines, and simulation frameworks to process and visualize lunar remote sensing datasets.
 
+## Table of Contents
+
+- [Introduction](#introduction)
+- [Setup and Deployment](#setup-and-deployment)
+  - [Master Node (Bare‑Metal or VM)](#master-node-baremetal-or-vm)
+  - [Worker Node (Docker‑only)](#worker-node-dockeronly)
+  - [Programmatic Configuration Overrides](#programmatic-configuration-overrides)
+- [Core Workflows](#core-workflows)
+  - [Simulation (Remote-Sensing Pre-Scan)](#1-simulation-remote-sensing-pre-scan)
+  - [Extraction (Pixel-Level Re-Projection)](#2-extraction-pixel-level-re-projection)
+  - [Monitoring](#3-monitoring)
+- [SPICE Engine](#spice-engine)
+  - [Kernel Managers](#kernel-managers)
+  - [Kernel Types](#kernel-types)
+  - [Dynamic Kernel Managers](#dynamic-kernel-managers)
+  - [Instruments](#instruments)
+- [Data Connectors](#data-connectors)
+- [Abstractions](#abstractions)
+- [Analysis](#analysis)
+
+
 ## Introduction
 
 `LunarPitsResearchToolbox` is the software implementation accompanying the master’s thesis _Advanced System for Identification of Subsurface Cavities in Lunar Pits_. It condenses the full methodological stack—geometry reconstruction, observation‑window simulation, raw‑data ingestion, reprojection, and analytics—into a single, version‑controlled Python package that can run unchanged on laptops, clusters, or containerised cloud workers/server runners.
