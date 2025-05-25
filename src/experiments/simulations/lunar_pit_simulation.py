@@ -39,7 +39,7 @@ class LunarPitAtlasMappingLROConfig(BaseSimulationConfig):
     }
 
     filter_type = "lunar_pit"
-    # This is used for simulation, not necessirily very exclusive
+    # This is used for simulation
     filter_kwargs = {
         "hard_radius": 35,
     }
